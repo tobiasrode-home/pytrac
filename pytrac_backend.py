@@ -15,6 +15,7 @@ from pytrac_core.api.routers.work_planning import (
     router as work_planning_router,
 )
 from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import logging
 
@@ -82,9 +83,18 @@ app.include_router(work_planning_router)
 
 
 WEB_DIR = Path(__file__).resolve().parent / "pytrac_web"
+# Serve JavaScript and CSS files
+app.mount(
+    "/js",
+    StaticFiles(directory=WEB_DIR / "js"),
+    name="js",
+)
 
+app.mount(
+    "/css",
+    StaticFiles(directory=WEB_DIR / "css"),
+    name="css",
+)
 @app.get("/", include_in_schema=False)
 async def serve_frontend():
     return FileResponse(WEB_DIR / "index.html")
-
-
