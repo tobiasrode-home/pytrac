@@ -1,0 +1,455 @@
+
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17643a">
+  <title>PyTrac – Precision Farming</title>
+
+  <link rel="stylesheet" href="/static/css/style.css">
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"
+  >
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>PyTrac</h1>
+      <p>Precision Farming · Betriebsverwaltung</p>
+    </div>
+
+    <span id="connection-status" class="status-badge">
+      Verbinde …
+    </span>
+  </header>
+
+  <nav class="navigation" aria-label="Hauptnavigation">
+    <button data-section="dashboard" class="active">Übersicht</button>
+    <button data-section="fields">Felder</button>
+    <button data-section="tractors">Traktoren</button>
+    <button data-section="implements">Anbaugeräte</button>
+    <!-- <button data-section="work">Arbeitsgang</button>-->
+    <button data-section="history">Arbeitsgänge</button>
+  </nav>
+
+  <main class="container">
+    <div id="notice" class="notice hidden" role="status"></div>
+
+    <!-- ==========================================
+         BETRIEBSÜBERSICHT
+         ========================================== -->
+
+    <section id="section-dashboard" class="page-section">
+      <h2>Betriebsübersicht</h2>
+
+      <div class="dashboard-grid">
+        <article class="panel">
+          <span class="muted">Felder</span>
+          <strong id="count-fields">–</strong>
+        </article>
+
+        <article class="panel">
+          <span class="muted">Traktoren</span>
+          <strong id="count-tractors">–</strong>
+        </article>
+
+        <article class="panel">
+          <span class="muted">Anbaugeräte</span>
+          <strong id="count-implements">–</strong>
+        </article>
+      </div>
+
+      <article class="panel">
+        <h3>Arbeitsgangstatus</h3>
+        <p id="dashboard-work-status">Status wird geladen …</p>
+        <button class="primary" data-go="work">
+          Arbeitsgang öffnen
+        </button>
+      </article>
+    </section>
+
+    <!-- ==========================================
+         FELDVERWALTUNG
+         ========================================== -->
+
+    <section id="section-fields" class="page-section hidden">
+      <div class="section-heading">
+        <h2>Feldverwaltung</h2>
+        <button class="primary" id="new-button">
+          Neuer Eintrag
+        </button>
+      </div>
+
+      <div id="records-list" class="records-list"></div>
+    </section>
+
+    <!-- ==========================================
+         TRAKTOREN
+         ========================================== -->
+
+    <section id="section-tractors" class="page-section hidden">
+      <div class="section-heading">
+        <h2>Traktoren</h2>
+        <button class="primary" data-create="tractors">
+          Neuer Traktor
+        </button>
+      </div>
+
+      <div id="tractors-list" class="records-list"></div>
+    </section>
+
+    <!-- ==========================================
+         ANBAUGERÄTE
+         ========================================== -->
+
+    <section id="section-implements" class="page-section hidden">
+      <div class="section-heading">
+        <h2>Anbaugeräte</h2>
+        <button class="primary" data-create="implements">
+          Neues Anbaugerät
+        </button>
+      </div>
+
+      <div id="implements-list" class="records-list"></div>
+    </section>
+
+    <!-- ==========================================
+         GEMEINSAMER EDITOR
+
+         Wichtig: Der Editor liegt außerhalb der
+         Verwaltungsbereiche, damit er beim Anlegen
+         und Bearbeiten sichtbar geschaltet werden kann.
+         ========================================== -->
+
+    <section id="editor" class="panel hidden">
+      <h3 id="editor-title">Eintrag bearbeiten</h3>
+
+      <form id="record-form">
+        <div id="form-fields" class="form-grid"></div>
+
+        <div id="field-map-container" class="hidden">
+          <h4>Feldgrenze und Referenzlinie</h4>
+
+          <p class="muted">
+            Zeichne das Feldpolygon und optional eine Referenzlinie.
+            Die endgültige Fläche wird serverseitig berechnet.
+          </p>
+
+          <div class="map-actions">
+            <button type="button" id="map-fit">
+              Karte anpassen
+            </button>
+
+            <button type="button" id="map-clear">
+              Zeichnung löschen
+            </button>
+          </div>
+
+          <div id="field-map"></div>
+
+          <p id="map-area" class="muted">
+            Noch keine Feldgrenze eingezeichnet.
+          </p>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="primary" id="save-button">
+            Speichern
+          </button>
+
+          <button type="button" id="cancel-button">
+            Abbrechen
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ==========================================
+         ARBEITSGANGVERWALTUNG
+         ========================================== -->
+
+    <section id="section-work" class="page-section hidden">
+      <h2>Arbeitsgangverwaltung</h2>
+
+      <article class="panel">
+        <div class="section-heading">
+          <h3>Aktueller Status</h3>
+          <button type="button" id="work-refresh">
+            Aktualisieren
+          </button>
+        </div>
+
+        <p>
+          Status:
+          <strong id="work-status">Wird geladen …</strong>
+        </p>
+
+        <p>
+          Arbeitsgang:
+          <span id="work-session-info">–</span>
+        </p>
+
+        <p>
+          Bearbeitete Fläche:
+          <strong id="work-area">0,000 ha</strong>
+        </p>
+
+        <p>
+          GPS:
+          <strong id="work-gps">–</strong>
+        </p>
+
+        <p>
+          Spurführung:
+          <strong id="work-guidance">–</strong>
+        </p>
+
+        <p id="work-message" role="status"></p>
+      </article>
+
+      <article class="panel">
+        <h3>Neuen Arbeitsgang starten</h3>
+
+        <div class="form-grid">
+          <label>
+            Bezeichnung
+            <input
+              id="work-name"
+              value="Arbeitsgang"
+              maxlength="100"
+              required
+            >
+          </label>
+
+          <label>
+            Feld
+            <select id="work-field" required>
+              <option value="">Bitte auswählen</option>
+            </select>
+          </label>
+
+          <label>
+            Traktor
+            <select id="work-tractor" required>
+              <option value="">Bitte auswählen</option>
+            </select>
+          </label>
+
+          <label>
+            Anbaugerät
+            <select id="work-implement" required>
+              <option value="">Bitte auswählen</option>
+            </select>
+          </label>
+
+          <label>
+            Vorgewende-Tiefe (m)
+            <input
+              id="work-headland"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value="5"
+              required
+            >
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button class="primary" id="work-start">
+            Starten
+          </button>
+
+          <button id="work-pause">
+            Pausieren
+          </button>
+
+          <button id="work-resume">
+            Fortsetzen
+          </button>
+
+          <button class="danger" id="work-finish">
+            Beenden
+          </button>
+        </div>
+      </article>
+      
+<!-- GPS-Arbeitsgang-Simulation: unabhängig von echten Aufzeichnungen -->
+<article class="panel" id="work-simulator">
+  <div class="section-heading">
+    <div>
+      <h3>Arbeitsgang simulieren</h3>
+      <p class="muted">
+        Erzeugt synthetische GPS-Daten innerhalb der ausgewählten Feldgrenze.
+        Die Simulation verändert keine echten Arbeitsgang-Daten.
+      </p>
+    </div>
+    <span class="status-badge" id="sim-status">Bereit</span>
+  </div>
+
+  <div class="form-grid">
+    <label>
+      Simulationsfeld
+      <select id="sim-field">
+        <option value="">Feld auswählen</option>
+      </select>
+    </label>
+
+    <label>
+      Arbeitsgerät
+      <select id="sim-implement">
+        <option value="">Anbaugerät auswählen</option>
+      </select>
+    </label>
+
+    <label>
+      Arbeitsbreite (m)
+      <input id="sim-width" type="number" min="0.5" max="60"
+             step="0.1" value="6">
+    </label>
+
+    <label>
+      Geschwindigkeit (km/h)
+      <input id="sim-speed" type="number" min="1" max="25"
+             step="0.5" value="8">
+    </label>
+
+    <label>
+      AB-Richtung (Grad)
+      <input id="sim-angle" type="number" min="0" max="179"
+             step="1" value="0">
+    </label>
+
+    <label>
+      GPS-Streuung (m)
+      <input id="sim-noise" type="number" min="0" max="2"
+             step="0.1" value="0">
+    </label>
+  </div>
+
+  <p class="muted" id="sim-reference-info">
+    Wenn eine Referenzlinie am Feld gespeichert ist, wird ihre Richtung
+    für die AB-Linien verwendet. Andernfalls gilt der eingestellte Winkel.
+  </p>
+
+  <div class="form-actions">
+    <button type="button" class="primary" id="sim-start">
+      Simulation starten
+    </button>
+    <button type="button" id="sim-pause" disabled>
+      Pausieren
+    </button>
+    <button type="button" id="sim-resume" disabled>
+      Fortsetzen
+    </button>
+    <button type="button" id="sim-reset">
+      Zurücksetzen
+    </button>
+  </div>
+
+  <div id="work-sim-map"
+       role="img"
+       aria-label="Karte mit Feldgrenze, AB-Fahrspuren und simulierter GPS-Position">
+  </div>
+
+  <div class="dashboard-grid sim-stats">
+    <article class="panel">
+      <span class="muted">Feldfläche</span>
+      <strong id="sim-area">– ha</strong>
+    </article>
+    <article class="panel">
+      <span class="muted">Fahrspuren</span>
+      <strong id="sim-lines">–</strong>
+    </article>
+    <article class="panel">
+      <span class="muted">GPS-Punkte</span>
+      <strong id="sim-points">0</strong>
+    </article>
+    <article class="panel">
+      <span class="muted">Fortschritt</span>
+      <strong id="sim-progress">0 %</strong>
+    </article>
+    <article class="panel">
+      <span class="muted">Simulierte Strecke</span>
+      <strong id="sim-distance">0 m</strong>
+    </article>
+  </div>
+
+  <p id="sim-message" class="muted" role="status" aria-live="polite">
+    Wähle ein Feld und starte die Simulation.
+  </p>
+</article>
+</section>
+
+    </section>
+    
+    <!-- ==========================================
+         ARBEITSGANG-HISTORIE
+         ========================================== -->
+    <section id="section-history" class="page-section hidden">
+      <div class="section-heading">
+        <h2>Gespeicherte Arbeitsgänge</h2>
+        <button type="button" id="history-refresh">
+          Aktualisieren
+        </button>
+      </div>
+
+      <div class="history-layout">
+        <article class="panel">
+          <h3>Arbeitsgänge</h3>
+          <p class="muted">
+            Wähle einen Arbeitsgang aus, um die gefahrene Strecke
+            auf der Karte anzuzeigen.
+          </p>
+          <div id="history-list" class="records-list">
+            <p>Lade Arbeitsgänge …</p>
+          </div>
+        </article>
+
+        <article class="panel">
+          <h3 id="history-map-title">Gefahrene Strecke</h3>
+          <div id="history-map"></div>
+
+          <div id="history-details" class="history-details">
+            Bitte einen Arbeitsgang auswählen.
+          </div>
+
+          <button
+            type="button"
+            class="danger"
+            id="history-delete"
+            disabled
+          >
+            Arbeitsgang löschen
+          </button>
+        </article>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==========================================
+       JAVASCRIPT
+       Reihenfolge wie in der bisherigen Datei
+       ========================================== -->
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script src="/static/js/map.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/work-sessions.js"></script>
+  <script src="/static/js/work-history.js"></script>
+  <script src="/static/js/work-simulator.js"></script>
+</body>
+</html>
