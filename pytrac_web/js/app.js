@@ -17,59 +17,38 @@ const configs = {
     ]
   },
 
-tractors: {
-  title: "Traktoren",
-  api: "/api/tractors",
-  fields: [
-    ["name", "Name", "text", true, "", ""],
-    ["length_m", "Länge (m)", "number", true, "", ""],
-    ["width_m", "Breite (m)", "number", true, "", ""],
-    [
-      "gps_offset_length_m",
-      "GPS-Längsversatz (m)",
-      "number", false, "", 0
-    ],
-    [
-      "gps_offset_width_m",
-      "GPS-Seitenversatz (m)",
-      "number", false, "", 0
-    ],
-    [
-      "turning_radius_m",
-      "Wendekreisradius (m)",
-      "number", true, "", ""
+  tractors: {
+    title: "Traktoren",
+    api: "/api/tractors",
+    fields: [
+      ["name", "Name", "text", true, "", ""],
+      ["length_m", "Länge (m)", "number", true, "", ""],
+      ["width_m", "Breite (m)", "number", true, "", ""],
+      ["gps_offset_length_m", "GPS-Längsversatz (m)", "number", false, "", 0],
+      ["gps_offset_width_m", "GPS-Seitenversatz (m)", "number", false, "", 0],
+      ["turning_radius_m", "Wenderadius (m)", "number", true, "", ""]
     ]
-  ]
-},
+  },
 
-implements: {
-  title: "Anbaugeräte",
-  api: "/api/implements",
-  fields: [
-    ["name", "Name", "text", true, "", ""],
-    ["length_m", "Länge (m)", "number", true, "", ""],
-    [
-      "working_width_m",
-      "Arbeitsbreite (m)",
-      "number", true, "", ""
-    ],
-    [
-      "mount_type",
-      "Anbauposition",
-      "select", true, "", "rear",
+  implements: {
+    title: "Anbaugeräte",
+    api: "/api/implements",
+    fields: [
+      ["name", "Name", "text", true, "", ""],
+      ["length_m", "Länge (m)", "number", true, "", ""],
+      ["working_width_m", "Arbeitsbreite (m)", "number", true, "", ""],
       [
-        ["front", "Frontanbau"],
-        ["rear", "Heckanbau"],
-        ["towed", "Gezogen"]
-      ]
-    ],
-    [
-      "work_offset_m",
-      "Abstand zur Arbeitskante (m)",
-      "number", true, "", 0
+        "mount_type", "Anbauposition", "select", true, "", "rear",
+        [
+          ["front", "Frontanbau"],
+          ["rear", "Heckanbau"],
+          ["towed", "Gezogen"]
+        ]
+      ],
+      ["work_offset_m", "Arbeitsversatz (m)", "number", false, "", 0]
     ]
-  ]
-},
+  }
+};
 
 async function request(url, options = {}) {
   const response = await fetch(url, {
