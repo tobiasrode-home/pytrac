@@ -29,17 +29,17 @@ def print_vehicle_state(state: VehicleState) -> None:
 
     vehicle_service.update_state(state)
 
-    print(
-        f"[PYTRAC] "
-        f"Zeit: {state.timestamp.isoformat()} | "
-        f"Position: {state.latitude:.7f}, {state.longitude:.7f} | "
-        f"Richtung: {state.heading_deg:.1f}° | "
-        f"Geschwindigkeit: "
-        f"{state.speed_mps if state.speed_mps is not None else 0.0:.2f} m/s | "
-        f"Pitch: {state.pitch_deg:.1f}° | "
-        f"Roll: {state.roll_deg:.1f}°",
-        flush=True,
-    )
+#    print(
+#        f"[PYTRAC] "
+#        f"Zeit: {state.timestamp.isoformat()} | "
+#        f"Position: {state.latitude:.7f}, {state.longitude:.7f} | "
+#        f"Richtung: {state.heading_deg:.1f}° | "
+#        f"Geschwindigkeit: "
+#        f"{state.speed_mps if state.speed_mps is not None else 0.0:.2f} m/s | "
+#        f"Pitch: {state.pitch_deg:.1f}° | "
+#        f"Roll: {state.roll_deg:.1f}°",
+#        flush=True,
+#    )
 
 
 @asynccontextmanager
