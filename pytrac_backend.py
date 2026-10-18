@@ -87,6 +87,4 @@ WEB_DIR = Path(__file__).resolve().parent / "pytrac_web"
 async def serve_frontend():
     return FileResponse(WEB_DIR / "index.html")
 
-@app.get("/", include_in_schema=False)
-def serve_frontend():
-    return FileResponse(WEB_DIR / "index.html")
+
