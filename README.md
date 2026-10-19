@@ -1,6 +1,6 @@
 ___AB hier ist neu_____
 
-
+```
 echo " video=DSI-2:720x1280@60,rotate=270" >> /boot/firmware/cmdline.txt
 
 apt update
@@ -24,3 +24,4 @@ cp -r data pytrac/
 cp .env pytrac/
 cd pytrac/
 /usr/bin/python3 -m uvicorn pytrac_backend:app --host 0.0.0.0 --port 8000 --reload
+```
