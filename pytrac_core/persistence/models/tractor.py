@@ -28,6 +28,16 @@ class Tractor(Base):
         nullable=False,
     )
 
+    wheelbase_m: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    max_steering_angle_deg: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
     gps_offset_length_m: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -38,9 +48,4 @@ class Tractor(Base):
         Float,
         nullable=False,
         default=0.0,
-    )
-
-    turning_radius_m: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
     )
