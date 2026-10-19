@@ -1,16 +1,18 @@
-
-from pydantic import BaseModel, ConfigDict, Field
-from pytrac_core.persistence.models.implement import MountType
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from pytrac_core.persistence.models.implement import MountType
+
 
 class TractorCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     length_m: float = Field(gt=0)
     width_m: float = Field(gt=0)
+    wheelbase_m: float = Field(gt=0)
+    max_steering_angle_deg: float = Field(gt=0, lt=90)
     gps_offset_length_m: float = 0.0
     gps_offset_width_m: float = 0.0
-    turning_radius_m: float = Field(gt=0)
 
 
 class TractorUpdate(TractorCreate):
@@ -21,6 +23,7 @@ class TractorRead(TractorCreate):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class ImplementCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -79,6 +82,7 @@ class FieldRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class WorkPlanningPreviewRequest(BaseModel):
     field_id: int = Field(gt=0)
     tractor_id: int = Field(gt=0)
@@ -115,6 +119,11 @@ class WorkPlanningPreviewRead(BaseModel):
     tractor_id: int
     tractor_name: str
     tractor_length_m: float
+    wheelbase_m: float
+    max_steering_angle_deg: float
+
+    # Aus Radstand und maximalem Lenkwinkel berechnet,
+    # nicht mehr als Traktoreigenschaft gespeichert.
     turning_radius_m: float
 
     implement_id: int
