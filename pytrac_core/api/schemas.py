@@ -124,7 +124,7 @@ class WorkPlanningPreviewRead(BaseModel):
 
     # Aus Radstand und maximalem Lenkwinkel berechnet,
     # nicht mehr als Traktoreigenschaft gespeichert.
-    turning_radius_m: float
+    #turning_radius_m: float
 
     implement_id: int
     implement_name: str
