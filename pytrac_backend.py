@@ -11,9 +11,7 @@ from pytrac_core.persistence.init_db import init_db
 from pytrac_core.api.routers.tractors import router as tractors_router
 from pytrac_core.api.routers.implements import router as implements_router
 from pytrac_core.api.routers.fields import router as fields_router
-from pytrac_core.api.routers.work_planning import (
-    router as work_planning_router,
-)
+
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -78,7 +76,6 @@ app = FastAPI(
 app.include_router(tractors_router)
 app.include_router(implements_router)
 app.include_router(fields_router)
-app.include_router(work_planning_router)
 
 
 
