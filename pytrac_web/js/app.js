@@ -26,7 +26,8 @@ const configs = {
       ["width_m", "Breite (m)", "number", true, "", ""],
       ["gps_offset_length_m", "GPS-Längsversatz (m)", "number", false, "", 0],
       ["gps_offset_width_m", "GPS-Seitenversatz (m)", "number", false, "", 0],
-      ["turning_radius_m", "Wenderadius (m)", "number", true, "", ""]
+      ["wheelbase_m", "Radstand (m)", "number", true, "", ""],
+      ["max_steering_angle_deg", "Lenkwinkel (°)", "number", true, "", ""]
     ]
   },
 
