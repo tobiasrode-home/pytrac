@@ -68,6 +68,15 @@ class WorkPlanningService:
         boundary = json.loads(field.boundary_json)
         reference_line = json.loads(field.reference_line_json)
 
+        # Einfaches Fahrradmodell:
+        # R = Radstand / tan(maximaler Lenkwinkel).
+        steering_angle_rad = math.radians(
+            tractor.max_steering_angle_deg
+        )
+        turning_radius_m = (
+            tractor.wheelbase_m / math.tan(steering_angle_rad)
+        )
+
         # Vorläufige Näherung: Beide Längen werden addiert.
         # Die tatsächliche Gespannlänge hängt von der
         # Kupplungsposition und Anbauart ab.
@@ -76,7 +85,7 @@ class WorkPlanningService:
         # Vorläufige geometrische Schätzung, noch keine
         # validierte Wendekurvenberechnung.
         suggested_headland_depth = max(
-            2.0 * tractor.turning_radius_m + implement.length_m,
+            2.0 * turning_radius_m + implement.length_m,
             2.0 * implement.working_width_m,
         )
 
@@ -96,7 +105,11 @@ class WorkPlanningService:
             "tractor_id": tractor.id,
             "tractor_name": tractor.name,
             "tractor_length_m": tractor.length_m,
-            "turning_radius_m": tractor.turning_radius_m,
+            "wheelbase_m": tractor.wheelbase_m,
+            "max_steering_angle_deg": (
+                tractor.max_steering_angle_deg
+            ),
+            "turning_radius_m": turning_radius_m,
             "implement_id": implement.id,
             "implement_name": implement.name,
             "implement_length_m": implement.length_m,
