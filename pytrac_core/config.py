@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # Gemeinsame Ausgaberate der Sensoren
     sensor_output_rate_hz: float = 5.0
 
+
+
+    kivy_api_base_url: str = "http://127.0.0.1:8000"
+    kivy_api_timeout: float = 5.0
+    kivy_refresh_interval: float = 1.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
