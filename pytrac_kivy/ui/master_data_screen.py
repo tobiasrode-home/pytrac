@@ -4,7 +4,7 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 
-from ui.settings_screen import SettingsScreen
+from pytrac_kivy.ui.settings_screen import SettingsScreen
 
 
 class MasterDataScreen(SettingsScreen):
@@ -14,6 +14,7 @@ class MasterDataScreen(SettingsScreen):
         self,
         api_url,
         selection,
+        api_client=None,
         on_back=None,
         on_selection_changed=None,
         **kwargs,
@@ -22,6 +23,7 @@ class MasterDataScreen(SettingsScreen):
         super().__init__(
             api_url=api_url,
             selection=selection,
+            api_client=api_client,
             on_back=on_back,
             on_selection_changed=on_selection_changed,
             **kwargs,

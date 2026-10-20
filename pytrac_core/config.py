@@ -38,3 +38,8 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Gibt die einmalig geladene Anwendungskonfiguration zurück."""
+    return settings

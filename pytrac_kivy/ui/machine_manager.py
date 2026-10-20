@@ -41,15 +41,12 @@ class MachineManager(BoxLayout):
         ))
         for key, label, default in [
             ("name", "Name", ""),
-            ("manufacturer", "Hersteller", ""),
-            ("model", "Modell", ""),
             ("length_m", "Länge (m)", "6"),
             ("width_m", "Breite (m)", "2.5"),
-            ("height_m", "Höhe (m)", "3"),
             ("wheelbase_m", "Radstand (m)", "2.8"),
-            ("gps_forward_m", "GPS vor Mitte (m)", "0"),
-            ("gps_left_m", "GPS links (m)", "0"),
-            ("gps_height_m", "GPS-Höhe (m)", "2.5"),
+            ("max_steering_angle_deg", "Max. Lenkwinkel (Grad)", "35"),
+            ("gps_offset_length_m", "GPS-Versatz längs (m)", "0"),
+            ("gps_offset_width_m", "GPS-Versatz seitlich (m)", "0"),
         ]:
             self.tractor_fields[key] = self._input(content, label, default)
 
@@ -62,17 +59,9 @@ class MachineManager(BoxLayout):
         ))
         for key, label, default in [
             ("name", "Name", ""),
-            ("manufacturer", "Hersteller", ""),
-            ("model", "Modell", ""),
             ("length_m", "Länge (m)", "2"),
-            ("width_m", "Breite (m)", "3"),
-            ("height_m", "Höhe (m)", "1"),
             ("working_width_m", "Arbeitsbreite (m)", "3"),
-            ("hitch_offset_m", "Aufnahmeversatz (m)", "0"),
-            ("working_edge_offset_m", "Arbeitskantenversatz (m)", "0"),
-            ("lateral_offset_m", "Seitlicher Versatz (m)", "0"),
-            ("headland_margin_m", "Vorgewendereserve (m)", "1"),
-            ("turning_radius_m", "Wenderadius (m, optional)", ""),
+            ("work_offset_m", "Arbeitsversatz (m)", "0"),
         ]:
             self.implement_fields[key] = self._input(content, label, default)
 
@@ -100,19 +89,18 @@ class MachineManager(BoxLayout):
         fields = self.tractor_fields if kind == "tractor" else self.implement_fields
         try:
             payload = {}
-            text_fields = {"name", "manufacturer", "model"}
             for key, field in fields.items():
                 value = field.text.strip()
-                if key in text_fields:
+                if key == "name":
+                    if not value:
+                        raise ValueError("Bitte einen Namen eingeben.")
                     payload[key] = value
-                elif key == "turning_radius_m" and not value:
-                    continue
                 else:
-                    payload[key] = float(value or 0)
+                    payload[key] = float(value.replace(",", ".") or 0)
 
             if kind == "implement":
-                payload["mount_position"] = {
-                    "Heck": "rear", "Front": "front", "Gezogen": "trailed"
+                payload["mount_type"] = {
+                    "Heck": "rear", "Front": "front", "Gezogen": "towed"
                 }[self.mount.text]
                 path = "/api/implements"
             else:

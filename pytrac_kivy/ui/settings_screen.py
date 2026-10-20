@@ -16,7 +16,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
-from ui.keyboard import TouchKeyboard
+from pytrac_kivy.ui.keyboard import TouchKeyboard
 
 
 GPS_DEVICE_ID = "pico-tractor-01"
@@ -31,6 +31,7 @@ class SettingsScreen(BoxLayout):
         self,
         api_url,
         selection,
+        api_client=None,
         on_back=None,
         on_selection_changed=None,
         on_master_data=None,
@@ -45,6 +46,7 @@ class SettingsScreen(BoxLayout):
         )
 
         self.api_url = api_url.rstrip("/")
+        self.api_client = api_client
         self.selection = selection
         self.on_back = on_back
         self.on_selection_changed = on_selection_changed
@@ -192,6 +194,8 @@ class SettingsScreen(BoxLayout):
 
     def request(self, path, method="GET", payload=None):
         """Führt einen API-Aufruf aus und liefert JSON zurück."""
+        if self.api_client is not None:
+            return self.api_client.request(path, method=method, payload=payload)
         response = requests.request(
             method,
             self.api_url + path,
@@ -345,21 +349,25 @@ class SettingsScreen(BoxLayout):
                 ("name", "Name", "text", None),
                 ("length_m", "Länge (m)", "number", "4.5"),
                 ("width_m", "Breite (m)", "number", "2.5"),
-                ("height_m", "Höhe (m)", "number", "2.8"),
                 ("wheelbase_m", "Radstand (m)", "number", "2.8"),
                 (
-                    "gps_forward_m",
-                    "GPS-Versatz vorwärts (m)",
+                    "max_steering_angle_deg",
+                    "Max. Lenkwinkel (Grad)",
+                    "number",
+                    "35",
+                ),
+                (
+                    "gps_offset_length_m",
+                    "GPS-Versatz längs (m)",
                     "number",
                     "0",
                 ),
                 (
-                    "gps_left_m",
-                    "GPS-Versatz links (m)",
+                    "gps_offset_width_m",
+                    "GPS-Versatz seitlich (m)",
                     "number",
                     "0",
                 ),
-                ("gps_height_m", "GPS-Höhe (m)", "number", "2.5"),
             ]
 
         elif kind == "implement":
@@ -368,8 +376,6 @@ class SettingsScreen(BoxLayout):
             fields = [
                 ("name", "Name", "text", None),
                 ("length_m", "Länge (m)", "number", "2.0"),
-                ("width_m", "Breite (m)", "number", "3.0"),
-                ("height_m", "Höhe (m)", "number", "1.0"),
                 (
                     "working_width_m",
                     "Arbeitsbreite (m)",
@@ -377,34 +383,16 @@ class SettingsScreen(BoxLayout):
                     "3.0",
                 ),
                 (
-                    "mount_position",
-                    "Anbauposition",
+                    "mount_type",
+                    "Anbauart",
                     "choice",
                     "rear",
                 ),
                 (
-                    "hitch_offset_m",
-                    "Kupplungsversatz (m)",
+                    "work_offset_m",
+                    "Arbeitsversatz (m)",
                     "number",
                     "0",
-                ),
-                (
-                    "working_edge_offset_m",
-                    "Arbeitskantenversatz (m)",
-                    "number",
-                    "0",
-                ),
-                (
-                    "lateral_offset_m",
-                    "Seitlicher Versatz (m)",
-                    "number",
-                    "0",
-                ),
-                (
-                    "headland_margin_m",
-                    "Vorgewendemarge (m)",
-                    "number",
-                    "1.0",
                 ),
             ]
 
@@ -461,12 +449,12 @@ class SettingsScreen(BoxLayout):
                 default_position = {
                     "front": "Vorne",
                     "rear": "Hinten",
-                    "trailed": "Angehängt",
+                    "towed": "Gezogen",
                 }.get(default, "Hinten")
 
                 widget = Spinner(
                     text=default_position,
-                    values=("Vorne", "Hinten", "Angehängt"),
+                    values=("Vorne", "Hinten", "Gezogen"),
                     size_hint_y=None,
                     height=dp(46),
                 )
@@ -570,7 +558,7 @@ class SettingsScreen(BoxLayout):
                         positions = {
                             "Vorne": "front",
                             "Hinten": "rear",
-                            "Angehängt": "trailed",
+                            "Gezogen": "towed",
                         }
 
                         payload[key] = positions[widget.text]
@@ -982,10 +970,9 @@ class SettingsScreen(BoxLayout):
 
             payload = {
                 "name": name_input.text.strip(),
-                "boundary": {
-                    "type": "Polygon",
-                    "coordinates": [ring],
-                },
+                # Das Backend erwartet eine Punktliste [longitude, latitude],
+                # kein GeoJSON-Objekt.
+                "boundary": ring,
                 "reference_line": [],
             }
 
@@ -1020,7 +1007,7 @@ class SettingsScreen(BoxLayout):
         def field_saved(created):
             popup.dismiss()
 
-            area_ha = float(created.get("area_ha", 0.0))
+            area_ha = float(created.get("area_m2", 0.0)) / 10000.0
 
             self.status_label.text = (
                 f'Feld gespeichert: {created.get("name")} · '

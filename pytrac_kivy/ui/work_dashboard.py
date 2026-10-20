@@ -1,518 +1,249 @@
-"""PyTrac: Arbeitsübersicht, Karte und Arbeitsgangsteuerung."""
+"""Arbeitsübersicht für das aktuelle FastAPI-Backend.
+
+Die Oberfläche zeigt Maschinen-/Feldauswahl, Kartenansicht und Sensorstatus.
+Arbeitsgangsteuerung wird erst angeboten, wenn entsprechende Backend-Endpunkte
+implementiert sind; es werden keine nicht vorhandenen Endpunkte aufgerufen.
+"""
 
 import threading
 
 import requests
-
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.graphics import Color, RoundedRectangle
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 
-from kivy_garden.mapview import MapView, MapMarker
+try:
+    from kivy_garden.mapview import MapView, MapMarker
+    from pytrac_kivy.ui.map_layers import FieldOverlay, field_center
+except ImportError:
+    MapView = None
+    MapMarker = None
+    FieldOverlay = None
+    field_center = None
 
-from ui.map_layers import FieldOverlay, field_center
 
-
-DARK = (0.08, 0.105, 0.09, 1)
-PANEL = (0.13, 0.17, 0.145, 1)
 GREEN = (0.16, 0.43, 0.28, 1)
-RED = (0.52, 0.19, 0.17, 1)
+DARK = (0.08, 0.105, 0.09, 1)
 
 
 class WorkDashboard(BoxLayout):
+    """Hauptübersicht mit Auswahlstatus, Karte und Live-Sensordaten."""
+
     def __init__(
         self,
         api_url,
-        device_id,
-        selection,
+        device_id="pico-tractor-01",
+        selection=None,
+        api_client=None,
         on_settings=None,
         on_status=None,
+        refresh_interval=1.0,
         **kwargs,
     ):
         super().__init__(
             orientation="vertical",
             spacing=dp(8),
-            padding=dp(4),
+            padding=dp(8),
             **kwargs,
         )
-
         self.api_url = api_url.rstrip("/")
         self.device_id = device_id
-        self.selection = selection
+        self.selection = selection if selection is not None else {}
+        self.api_client = api_client
         self.on_settings = on_settings
         self.on_status = on_status
-
+        self.refresh_interval = max(0.5, float(refresh_interval))
         self.busy = False
-        self.refreshing = False
-        self.last_session_id = None
-        self.last_position = None
-        self.current_marker = None
-        self.current_session = None
-        self.current_sensor = {}
-        self.current_latest = {}
-        self._refresh_lock = threading.Lock()
+        self._refresh_event = None
+        self._latest_state = None
+        self._marker = None
 
-        # Kopfzeile
-        header = BoxLayout(
-            size_hint_y=None,
-            height=dp(52),
-            spacing=dp(8),
-        )
-
-        settings_button = self.make_button(
-            "Einstellungen",
-            PANEL,
-            self.open_settings,
-        )
-        settings_button.size_hint_x = None
-        settings_button.width = dp(190)
-
-        header.add_widget(settings_button)
+        header = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(8))
         header.add_widget(Label(
-            text="[b]Arbeitsübersicht[/b]",
+            text="[b]PyTrac · Arbeitsübersicht[/b]",
             markup=True,
-            font_size="24sp",
+            font_size="23sp",
             halign="left",
         ))
-        header.add_widget(Widget())
+        header.add_widget(self._button("Einstellungen", self.open_settings))
+        header.add_widget(self._button("Aktualisieren", self.refresh))
         self.add_widget(header)
 
-        # Kartenansicht
-        self.map_container = BoxLayout()
-        self.map_view = MapView(
-            lat=51.0,
-            lon=10.0,
-            zoom=15,
-            double_tap_zoom=True,
+        self.selection_label = Label(
+            text="", size_hint_y=None, height=dp(40), halign="left"
         )
+        self.add_widget(self.selection_label)
 
-        self.field_overlay = FieldOverlay(self.map_view)
-        self.map_view.add_layer(self.field_overlay)
-        self.map_container.add_widget(self.map_view)
-        self.add_widget(self.map_container)
+        body = BoxLayout(orientation="horizontal", spacing=dp(8))
+        self.add_widget(body)
 
-        # Spurführungsanzeige
-        self.guidance_panel = BoxLayout(
-            orientation="vertical",
-            size_hint_y=None,
-            height=dp(112),
-            padding=dp(12),
-            spacing=dp(4),
-        )
-
-        with self.guidance_panel.canvas.before:
-            Color(*PANEL)
-            self.guidance_bg = RoundedRectangle(
-                pos=self.guidance_panel.pos,
-                size=self.guidance_panel.size,
-                radius=[dp(12)],
+        if MapView is not None:
+            self.map_view = MapView(
+                lat=51.3, lon=9.5, zoom=14, size_hint_x=0.68
             )
+            self.field_overlay = FieldOverlay(self.map_view)
+            self.map_view.add_layer(self.field_overlay)
+            body.add_widget(self.map_view)
+        else:
+            self.map_view = None
+            self.field_overlay = None
+            body.add_widget(Label(
+                text="Kartenansicht nicht verfügbar.\n"
+                     "Installiere kivy-garden.mapview.",
+                size_hint_x=0.68,
+            ))
 
-        self.guidance_panel.bind(
-            pos=self._update_guidance_bg,
-            size=self._update_guidance_bg,
+        panel = BoxLayout(
+            orientation="vertical", spacing=dp(8), padding=dp(10),
+            size_hint_x=0.32,
         )
-
-        self.guidance_title = Label(
-            text="SPURFÜHRUNG",
-            font_size="13sp",
-            bold=True,
-            halign="left",
-            size_hint_y=None,
-            height=dp(22),
-        )
-
-        self.guidance_value = Label(
-            text="Warte auf GPS und Arbeitsgang …",
-            font_size="22sp",
-            bold=True,
-            halign="center",
-            valign="middle",
-        )
-        self.guidance_value.bind(
-            size=lambda widget, size: setattr(
-                widget, "text_size", size
-            )
-        )
-
-        self.guidance_panel.add_widget(self.guidance_title)
-        self.guidance_panel.add_widget(self.guidance_value)
-        self.add_widget(self.guidance_panel)
-
-        # Arbeitsganginformationen
-        self.detail_label = Label(
-            text="Noch kein Arbeitsgang aktiv.",
-            size_hint_y=None,
-            height=dp(38),
-            font_size="15sp",
-            halign="left",
-            valign="middle",
-        )
-        self.detail_label.bind(
-            size=lambda widget, size: setattr(
-                widget, "text_size", size
-            )
-        )
-        self.add_widget(self.detail_label)
-
-        # Bedienknöpfe unten
-        controls = GridLayout(
-            cols=4,
-            spacing=dp(8),
-            size_hint_y=None,
-            height=dp(68),
-        )
-
-        self.start_button = self.make_button(
-            "Start",
-            GREEN,
-            lambda *_: self.action("start"),
-        )
-        self.pause_button = self.make_button(
-            "Pause",
-            PANEL,
-            lambda *_: self.action("pause"),
-        )
-        self.resume_button = self.make_button(
-            "Fortsetzen",
-            PANEL,
-            lambda *_: self.action("resume"),
-        )
-        self.finish_button = self.make_button(
-            "Beenden",
-            RED,
-            lambda *_: self.action("finish"),
-        )
-
-        for button in (
-            self.start_button,
-            self.pause_button,
-            self.resume_button,
-            self.finish_button,
+        body.add_widget(panel)
+        panel.add_widget(Label(
+            text="[b]Fahrzeugstatus[/b]", markup=True,
+            size_hint_y=None, height=dp(42), font_size="18sp",
+        ))
+        self.connection_label = self._status_label("Backend: wird geprüft")
+        self.gps_label = self._status_label("GPS: —")
+        self.position_label = self._status_label("Position: —")
+        self.heading_label = self._status_label("Richtung: —")
+        self.speed_label = self._status_label("Geschwindigkeit: —")
+        self.imu_label = self._status_label("IMU: —")
+        for widget in (
+            self.connection_label, self.gps_label, self.position_label,
+            self.heading_label, self.speed_label, self.imu_label,
         ):
-            controls.add_widget(button)
-
-        self.add_widget(controls)
-
-        # Erster Abruf nach Aufbau der Oberfläche
-        Clock.schedule_once(lambda _dt: self.refresh(), 0.5)
-
-    # ---------------------------------------------------------
-    # Oberfläche
-    # ---------------------------------------------------------
-
-    def make_button(self, text, color, callback):
-        button = Button(
-            text=text,
-            background_normal="",
-            background_down="",
-            background_color=color,
-            color=(1, 1, 1, 1),
-            font_size="17sp",
-            bold=True,
+            panel.add_widget(widget)
+        panel.add_widget(Widget())
+        self.message_label = Label(
+            text="Warte auf Sensordaten …", halign="left", valign="top"
         )
-        button.bind(on_release=callback)
+        panel.add_widget(self.message_label)
+
+        self.update_selection()
+        self.selection_changed()
+        Clock.schedule_once(lambda _dt: self.refresh(), 0)
+        self._refresh_event = Clock.schedule_interval(
+            lambda _dt: self.refresh(), self.refresh_interval
+        )
+
+    def _button(self, text, callback):
+        button = Button(
+            text=text, size_hint_x=None, width=dp(170),
+            background_normal="", background_down="",
+            background_color=GREEN, color=(1, 1, 1, 1),
+        )
+        button.bind(on_release=lambda *_: callback())
         return button
 
-    def _update_guidance_bg(self, *_):
-        self.guidance_bg.pos = self.guidance_panel.pos
-        self.guidance_bg.size = self.guidance_panel.size
+    @staticmethod
+    def _status_label(text):
+        return Label(text=text, halign="left", valign="middle",
+                     size_hint_y=None, height=dp(42))
 
-    def open_settings(self, *_):
+    def open_settings(self):
         if self.on_settings:
             self.on_settings()
 
-    # ---------------------------------------------------------
-    # HTTP
-    # ---------------------------------------------------------
-
-    def request(self, path, method="GET", payload=None):
-        response = requests.request(
-            method,
-            self.api_url + path,
-            json=payload,
-            timeout=5,
+    def request(self, path):
+        if self.api_client is not None:
+            return self.api_client.get(path)
+        response = requests.get(
+            f"{self.api_url}/{path.lstrip('/')}", timeout=5
         )
         response.raise_for_status()
+        return response.json() if response.content else {}
 
-        if not response.content:
-            return {}
-
-        return response.json()
-
-    # ---------------------------------------------------------
-    # Auswahl und Karte
-    # ---------------------------------------------------------
-
-    def selection_changed(self):
-        field = self.selection.get("field")
-
-        if field:
-            self.center_on_field(field)
-
-        self.update_map(field, [])
-
-    def center_on_field(self, field):
-        center = field_center(field) if field else None
-
-        if center:
-            self.map_view.center_on(*center)
-            self.map_view.zoom = max(self.map_view.zoom, 15)
-
-    def update_map(self, field, track_points):
-        self.field_overlay.set_data(
-            field=field,
-            track_points=track_points,
+    def update_selection(self):
+        def name(kind, title):
+            item = self.selection.get(kind)
+            return item.get("name", "nicht gewählt") if item else "nicht gewählt"
+        tractor = name("tractor", "Traktor")
+        implement = name("implement", "Anbaugerät")
+        field = name("field", "Feld")
+        self.selection_label.text = (
+            f"Traktor: {tractor}    ·    Anbaugerät: {implement}    ·    Feld: {field}"
         )
 
-    def update_position(self, latest):
-        try:
-            lat = float(latest["latitude"])
-            lon = float(latest["longitude"])
-        except (KeyError, TypeError, ValueError):
-            return
-
-        first_position = self.last_position is None
-        self.last_position = (lat, lon)
-
-        if self.current_marker is None:
-            self.current_marker = MapMarker(
-                lat=lat,
-                lon=lon,
-            )
-            self.map_view.add_marker(self.current_marker)
-        else:
-            self.current_marker.lat = lat
-            self.current_marker.lon = lon
-
-        if first_position:
-            self.map_view.center_on(lat, lon)
-
-    # ---------------------------------------------------------
-    # Aktualisierung
-    # ---------------------------------------------------------
+    def selection_changed(self):
+        self.update_selection()
+        field = self.selection.get("field")
+        if self.field_overlay:
+            self.field_overlay.set_data(field=field, track_points=[])
+        if field and self.map_view and field_center:
+            center = field_center(field)
+            if center:
+                self.map_view.center_on(center[0], center[1])
+                self.map_view.zoom = max(self.map_view.zoom, 15)
 
     def refresh(self):
-        if not self._refresh_lock.acquire(blocking=False):
-            return
-
-        def worker():
-            try:
-                session_data = self.request(
-                    "/api/work-sessions/current"
-                )
-
-                sensor = self.request(
-                    f"/api/sensors/{self.device_id}/status"
-                )
-
-                latest = self.request(
-                    f"/api/sensors/{self.device_id}/latest"
-                )
-
-                session = session_data.get("session")
-                points = []
-
-                if session:
-                    try:
-                        track_data = self.request(
-                            f"/api/work-sessions/{session['id']}/track"
-                        )
-                        points = track_data.get("points", [])
-                    except requests.RequestException:
-                        # Eine fehlende Track-Route soll nicht
-                        # die komplette Übersicht blockieren.
-                        points = []
-
-                Clock.schedule_once(
-                    lambda _dt: self.update_display(
-                        session_data,
-                        sensor,
-                        latest,
-                        points,
-                    )
-                )
-
-            except Exception as exc:
-                message = f"Backend nicht erreichbar: {exc}"
-                Clock.schedule_once(
-                    lambda _dt, msg=message: self.set_error(msg)
-                )
-            finally:
-                self._refresh_lock.release()
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def set_error(self, message):
-        self.detail_label.text = message
-
-    def update_display(self, data, sensor, latest, points):
-        session = data.get("session")
-        guidance = data.get("guidance") or {}
-
-        self.current_session = session
-        self.current_sensor = sensor
-        self.current_latest = latest
-
-        if self.on_status:
-            self.on_status(sensor, latest, session)
-
-        if session:
-            area_ha = float(
-                data.get("coverage_area_m2") or 0
-            ) / 10000
-
-            field = session.get("field") or self.selection.get("field")
-            field_name = (
-                field.get("name", "Feld")
-                if field
-                else "Feld"
-            )
-
-            self.detail_label.text = (
-                f"{field_name} · Arbeitsgang {session.get('id', '?')} · "
-                f"{session.get('status', '?')} · "
-                f"Bearbeitet: {area_ha:.3f} ha"
-            )
-
-            self.last_session_id = session.get("id")
-            self.update_map(field, points)
-
-        else:
-            field = self.selection.get("field")
-            self.last_session_id = None
-            self.detail_label.text = (
-                "Kein Arbeitsgang aktiv. Bitte Feld, Traktor und "
-                "Anbaugerät auswählen und Start drücken."
-            )
-            self.update_map(field, [])
-
-        # GPS-Marker nur mit gültiger Position aktualisieren.
-        if (
-            sensor.get("gps_valid")
-            and latest.get("latitude") is not None
-            and latest.get("longitude") is not None
-        ):
-            self.update_position(latest)
-
-        self.update_guidance(guidance, session)
-
-    # ---------------------------------------------------------
-    # Spurführung
-    # ---------------------------------------------------------
-
-    def update_guidance(self, guidance, session):
-        if not session:
-            self.guidance_title.text = "SPURFÜHRUNG"
-            self.guidance_value.text = (
-                "Arbeitsgang starten, um die Spurführung zu aktivieren."
-            )
-            return
-
-        if not guidance.get("gps_valid", False):
-            self.guidance_title.text = "GPS NICHT GÜLTIG"
-            self.guidance_value.text = guidance.get(
-                "message",
-                "Warte auf einen aktuellen GPS-Fix.",
-            )
-            return
-
-        if not guidance.get("guidance_valid", False):
-            self.guidance_title.text = "SPURFÜHRUNG"
-            self.guidance_value.text = guidance.get(
-                "message",
-                "GPS gültig – Referenzspur noch nicht verfügbar.",
-            )
-            return
-
-        error = guidance.get("cross_track_error_m")
-        correction = guidance.get("direction_correction_deg")
-        side = guidance.get("cross_track_side", "unknown")
-
-        if error is None:
-            self.guidance_value.text = guidance.get(
-                "message",
-                "Spurführung verfügbar",
-            )
-        else:
-            direction = {
-                "left": "links",
-                "right": "rechts",
-                "center": "mittig",
-            }.get(side, side)
-
-            self.guidance_value.text = (
-                f"{abs(float(error)):.2f} m {direction}"
-            )
-
-            if correction is not None:
-                self.guidance_value.text += (
-                    f" · Korrektur: {float(correction):+.1f}°"
-                )
-
-        self.guidance_title.text = "SPURFÜHRUNG AKTIV"
-
-    # ---------------------------------------------------------
-    # Arbeitsgangaktionen
-    # ---------------------------------------------------------
-
-    def action(self, name):
         if self.busy:
             return
-
         self.busy = True
 
         def worker():
             try:
-                if name == "start":
-                    field = self.selection.get("field")
-                    tractor = self.selection.get("tractor")
-                    implement = self.selection.get("implement")
-
-                    if not field or not tractor or not implement:
-                        raise ValueError(
-                            "Bitte zuerst Feld, Traktor und "
-                            "Anbaugerät in den Einstellungen auswählen."
-                        )
-
-                    result = self.request(
-                        "/api/work-sessions",
-                        method="POST",
-                        payload={
-                            "field_id": int(field["id"]),
-                            "tractor_id": int(tractor["id"]),
-                            "implement_id": int(implement["id"]),
-                        },
-                    )
-
-                else:
-                    result = self.request(
-                        f"/api/work-sessions/{name}",
-                        method="POST",
-                        payload={},
-                    )
-
-                message = result.get(
-                    "message",
-                    result.get("status", f"Aktion {name} ausgeführt."),
-                )
-
-                Clock.schedule_once(
-                    lambda _dt, msg=message: self.set_error(msg)
-                )
-
+                data = self.request("/api/vehicle/state")
+                Clock.schedule_once(lambda _dt, value=data: self._show_state(value))
             except Exception as exc:
-                message = f"Aktion fehlgeschlagen: {exc}"
-                Clock.schedule_once(
-                    lambda _dt, msg=message: self.set_error(msg)
-                )
+                message = str(exc)
+                Clock.schedule_once(lambda _dt, value=message: self._show_error(value))
             finally:
                 self.busy = False
-                Clock.schedule_once(lambda _dt: self.refresh())
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _show_error(self, message):
+        self.connection_label.text = "Backend: FEHLER"
+        self.message_label.text = message
+        if self.on_status:
+            self.on_status(message)
+
+    def _show_state(self, data):
+        self._latest_state = data
+        available = bool(data.get("available"))
+        self.connection_label.text = (
+            "Backend: verbunden · Sensoren aktuell"
+            if available else "Backend: verbunden · keine aktuellen Sensordaten"
+        )
+        gps_valid = bool(data.get("gps_valid"))
+        self.gps_label.text = "GPS: gültig" if gps_valid else "GPS: kein gültiger Fix"
+        lat, lon = data.get("latitude"), data.get("longitude")
+        if gps_valid and lat is not None and lon is not None:
+            self.position_label.text = f"Position: {float(lat):.6f}, {float(lon):.6f}"
+            if self.map_view:
+                self.map_view.center_on(float(lat), float(lon))
+                if MapMarker is not None:
+                    if self._marker is not None:
+                        try:
+                            self.map_view.remove_widget(self._marker)
+                        except Exception:
+                            pass
+                    self._marker = MapMarker(lat=float(lat), lon=float(lon))
+                    self.map_view.add_widget(self._marker)
+        else:
+            self.position_label.text = "Position: —"
+        heading = data.get("heading_deg")
+        self.heading_label.text = (
+            f"Richtung: {float(heading):.1f}°" if heading is not None
+            else "Richtung: —"
+        )
+        speed = data.get("speed_mps")
+        self.speed_label.text = (
+            f"Geschwindigkeit: {float(speed) * 3.6:.1f} km/h"
+            if speed is not None else "Geschwindigkeit: —"
+        )
+        self.imu_label.text = (
+            "IMU: gültig" if data.get("imu_valid") else "IMU: nicht verfügbar"
+        )
+        reason = data.get("reason")
+        self.message_label.text = str(reason or "Sensordaten werden laufend aktualisiert.")
+        if self.on_status:
+            self.on_status(self.message_label.text)
+
+    def stop(self):
+        if self._refresh_event is not None:
+            self._refresh_event.cancel()
+            self._refresh_event = None

@@ -4,36 +4,43 @@ from kivy.graphics import Color, Line
 from kivy_garden.mapview import MapLayer
 
 
+def _rings_from_field(field):
+    """Normalisiert Backend-Koordinatenlisten und GeoJSON auf Ringe."""
+    boundary = (field or {}).get("boundary") or []
+    if isinstance(boundary, dict):
+        geometry_type = boundary.get("type")
+        coordinates = boundary.get("coordinates") or []
+        if geometry_type == "Polygon":
+            return coordinates
+        if geometry_type == "MultiPolygon":
+            return [ring for polygon in coordinates for ring in polygon]
+        return []
+    # Aktuelles Backend: [[longitude, latitude], ...]
+    if isinstance(boundary, list) and boundary and isinstance(boundary[0], (list, tuple)):
+        if len(boundary[0]) >= 2 and all(
+            isinstance(value, (int, float)) for value in boundary[0][:2]
+        ):
+            return [boundary]
+    return []
+
+
 def field_center(field):
     """Ermittelt den Mittelpunkt der Feldgrenze."""
-    if not field:
+    rings = _rings_from_field(field)
+    if not rings:
         return None
-
-    boundary = field.get("boundary") or {}
-    geometry_type = boundary.get("type")
-    coordinates = boundary.get("coordinates") or []
-
+    points = rings[0]
+    if len(points) > 1 and points[0] == points[-1]:
+        points = points[:-1]
+    if not points:
+        return None
     try:
-        if geometry_type == "Polygon":
-            ring = coordinates[0]
-        elif geometry_type == "MultiPolygon":
-            ring = coordinates[0][0]
-        else:
-            return None
-
-        # GeoJSON-Koordinaten sind [longitude, latitude].
-        points = ring[:-1] if len(ring) > 1 else ring
-
-        if not points:
-            return None
-
         longitude = sum(float(point[0]) for point in points) / len(points)
         latitude = sum(float(point[1]) for point in points) / len(points)
-
         return latitude, longitude
-
     except (IndexError, TypeError, ValueError):
         return None
+
 
 class FieldOverlay(MapLayer):
     """Zeichnet Feldgrenzen und GPS-Spuren über MapView."""
@@ -65,22 +72,7 @@ class FieldOverlay(MapLayer):
 
         with self.canvas:
             if self.field:
-                boundary = self.field.get("boundary") or {}
-                geometry_type = boundary.get("type")
-                coordinates = boundary.get("coordinates") or []
-
-                if geometry_type == "Polygon" and coordinates:
-                    rings = [coordinates[0]]
-                elif geometry_type == "MultiPolygon":
-                    rings = [
-                        polygon[0]
-                        for polygon in coordinates
-                        if polygon
-                    ]
-                else:
-                    rings = []
-
-                for ring in rings:
+                for ring in _rings_from_field(self.field):
                     points = []
 
                     for coordinate in ring:
