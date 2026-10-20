@@ -7,7 +7,7 @@ Config.set("graphics", "rotation", "270")
 
 
 from kivy.app import App
-
+from pytrac_core.config import settings
 from pytrac_kivy.dependencies import create_api_client
 
 
