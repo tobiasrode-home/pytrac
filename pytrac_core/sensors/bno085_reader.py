@@ -113,16 +113,16 @@ class Bno085Reader:
                 while not stop_event.is_set():
                     measurement = self.read_measurement()
 
-                    logger.info(
-                        "[IMU] yaw=%.1f pitch=%.1f roll=%.1f "
-                        "accel=(%.2f, %.2f, %.2f) m/s²",
-                        measurement.yaw_deg,
-                        measurement.pitch_deg,
-                        measurement.roll_deg,
-                        measurement.accel_x_mps2,
-                        measurement.accel_y_mps2,
-                        measurement.accel_z_mps2,
-                    )
+                    #logger.info(
+                    #    "[IMU] yaw=%.1f pitch=%.1f roll=%.1f "
+                    #    "accel=(%.2f, %.2f, %.2f) m/s²",
+                    #    measurement.yaw_deg,
+                    #    measurement.pitch_deg,
+                    #    measurement.roll_deg,
+                    #    measurement.accel_x_mps2,
+                    #    measurement.accel_y_mps2,
+                    #    measurement.accel_z_mps2,
+                    #)
 
                     if self.on_measurement is not None:
                         self.on_measurement(measurement)
