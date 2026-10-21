@@ -38,11 +38,11 @@ class Bno085Reader:
         self._imu: BNO08x_RVC | None = None
 
     def _open(self) -> None:
-        logger.info(
-            "[IMU] Öffne Port %s mit %s Baud.",
-            self.port,
-            self.baudrate,
-        )
+        #logger.info(
+        #    "[IMU] Öffne Port %s mit %s Baud.",
+        #    self.port,
+        #    self.baudrate,
+        #)
 
         self._uart = serial.Serial(
             port=self.port,
@@ -55,7 +55,7 @@ class Bno085Reader:
 
         self._imu = BNO08x_RVC(self._uart)
 
-        logger.info("[IMU] Serielle Verbindung geöffnet.")
+        #logger.info("[IMU] Serielle Verbindung geöffnet.")
 
     def read_measurement(self) -> ImuMeasurement:
         """Liest einen Messdatensatz vom BNO085."""
@@ -101,7 +101,7 @@ class Bno085Reader:
         if uart is not None and uart.is_open:
             uart.close()
 
-        logger.info("[IMU] Serielle Verbindung geschlossen.")
+        #logger.info("[IMU] Serielle Verbindung geschlossen.")
 
     def run(self, stop_event: threading.Event) -> None:
         """Liest kontinuierlich IMU-Daten bis zum Stoppsignal."""
