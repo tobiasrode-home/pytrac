@@ -19,7 +19,6 @@ from kivy.uix.widget import Widget
 from pytrac_kivy.ui.keyboard import TouchKeyboard
 
 
-GPS_DEVICE_ID = "pico-tractor-01"
 GPS_POLL_INTERVAL = 1.0
 MIN_POINT_DISTANCE_M = 2.0
 
@@ -812,7 +811,7 @@ class SettingsScreen(BoxLayout):
             def worker():
                 try:
                     data = self.request(
-                        f"/api/sensors/{GPS_DEVICE_ID}/latest"
+                        f"/api/vehicle/state"
                     )
 
                     Clock.schedule_once(
@@ -895,7 +894,7 @@ class SettingsScreen(BoxLayout):
             def worker():
                 try:
                     data = self.request(
-                        f"/api/sensors/{GPS_DEVICE_ID}/latest"
+                        f"/api/vehicle/state"
                     )
 
                     if not data.get("gps_valid", False):
