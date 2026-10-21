@@ -15,6 +15,8 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 
+from pytrac_kivy.ui.keyboard import TouchKeyboard
+
 
 INTERFACE = "wlan0"
 
@@ -394,6 +396,7 @@ class WifiManager(BoxLayout):
             size_hint_y=None,
             height=dp(48),
             font_size=dp(18),
+            write_tab=False,
         )
 
         if security == "Offen":
@@ -401,6 +404,16 @@ class WifiManager(BoxLayout):
             password_input.disabled = True
 
         content.add_widget(password_input)
+
+        # Die WLAN-Ansicht muss dieselbe Touch-Tastatur wie die
+        # übrigen Kivy-Formulare verwenden. Ein TextInput allein
+        # öffnet auf Kiosk-/Touch-Systemen nicht immer eine Tastatur.
+        keyboard_container = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            height=0,
+        )
+        content.add_widget(keyboard_container)
 
         buttons = BoxLayout(
             size_hint_y=None,
@@ -411,10 +424,29 @@ class WifiManager(BoxLayout):
         popup = Popup(
             title="WLAN verbinden",
             content=content,
-            size_hint=(0.9, None),
+            size_hint=(0.96, None),
             height=dp(190),
             auto_dismiss=False,
         )
+
+        def finish_password_entry():
+            password_input.focus = False
+
+        def password_focus_changed(instance, focused):
+            keyboard_container.clear_widgets()
+            if focused and security != "Offen":
+                keyboard_container.height = dp(250)
+                popup.height = dp(470)
+                keyboard_container.add_widget(TouchKeyboard(
+                    target=password_input,
+                    numeric=False,
+                    on_done=finish_password_entry,
+                ))
+            else:
+                keyboard_container.height = 0
+                popup.height = dp(190)
+
+        password_input.bind(focus=password_focus_changed)
 
         cancel = Button(text="Abbrechen")
         cancel.bind(on_release=popup.dismiss)
@@ -451,6 +483,13 @@ class WifiManager(BoxLayout):
 
         connect.bind(on_release=do_connect)
         popup.open()
+        if security != "Offen":
+            # Fokus erst nach dem Öffnen setzen, damit die Bildschirmtastatur
+            # korrekt in den Popup-Layoutbereich eingebaut wird.
+            Clock.schedule_once(
+                lambda _dt: setattr(password_input, "focus", True),
+                0.15,
+            )
 
     # -----------------------------------------------------
     # Gespeicherte Profile
