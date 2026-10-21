@@ -162,7 +162,7 @@ def send_ubx_config(
     command = f"UBX {msg_class:02X}/{msg_id:02X}"
 
     if result is True:
-        logger.info("[GPS CONFIG] %s: ACK", command)
+        #logger.info("[GPS CONFIG] %s: ACK", command)
         return True
 
     if result is False:
@@ -178,9 +178,9 @@ def send_ubx_config(
 
 def configure_gps(uart: serial.Serial) -> bool:
     """Konfiguriert den NEO-6M auf 5 Hz und GGA/RMC."""
-    logger.info(
-        "[GPS CONFIG] Konfiguriere Navigationsrate auf 5 Hz."
-    )
+    #logger.info(
+    #    "[GPS CONFIG] Konfiguriere Navigationsrate auf 5 Hz."
+    #)
 
     rate_ok = send_ubx_config(
         uart,
@@ -203,9 +203,9 @@ def configure_gps(uart: serial.Serial) -> bool:
     configured = rate_ok and all(message_results)
 
     if configured:
-        logger.info(
-            "[GPS CONFIG] Konfiguration vollständig bestätigt."
-        )
+        #logger.info(
+        #    "[GPS CONFIG] Konfiguration vollständig bestätigt."
+        #)
     else:
         logger.warning(
             "[GPS CONFIG] Konfiguration nicht vollständig bestätigt."
@@ -275,16 +275,16 @@ class GpsReader:
             else "messe ..."
         )
 
-        logger.info(
-            "[GPS STATUS] %s | GGA-Rate=%s | GGA=%d | RMC=%d "
-            "| Satelliten=%s | HDOP=%s",
-            "FIX" if self._last_fix else "NO_FIX",
-            rate_text,
-            self._gga_count,
-            self._rmc_count,
-            self._last_satellites,
-            self._last_hdop,
-        )
+        #logger.info(
+        #    "[GPS STATUS] %s | GGA-Rate=%s | GGA=%d | RMC=%d "
+        #    "| Satelliten=%s | HDOP=%s",
+        #    "FIX" if self._last_fix else "NO_FIX",
+        #    rate_text,
+        #    self._gga_count,
+        #    self._rmc_count,
+        #    self._last_satellites,
+        #    self._last_hdop,
+        #)
 
         self._last_status_time = now
 
@@ -444,11 +444,11 @@ class GpsReader:
         """Liest kontinuierlich GPS-Daten bis zum Stoppsignal."""
         while not stop_event.is_set():
             try:
-                logger.info(
-                    "[GPS] Öffne %s mit %d Baud.",
-                    self.port,
-                    self.baudrate,
-                )
+                #logger.info(
+                #    "[GPS] Öffne %s mit %d Baud.",
+                #    self.port,
+                #    self.baudrate,
+                #)
 
                 with serial.Serial(
                     port=self.port,
@@ -459,7 +459,7 @@ class GpsReader:
                     timeout=0.2,
                     write_timeout=1.0,
                 ) as uart:
-                    logger.info("[GPS] UART geöffnet.")
+                    #logger.info("[GPS] UART geöffnet.")
 
                     time.sleep(0.2)
 
