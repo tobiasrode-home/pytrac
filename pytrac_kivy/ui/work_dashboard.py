@@ -268,9 +268,9 @@ class WorkDashboard(BoxLayout):
                 self._marker.lat = float(lat)
                 self._marker.lon = float(lon)
 
-                 heading = data.get("heading_deg")
-                 if data.get("imu_valid") and heading is not None:
-                     self._marker.set_heading(heading)
+                heading = data.get("heading_deg")
+                if data.get("imu_valid") and heading is not None:
+                    self._marker.set_heading(heading)
                         
         else:
             self.position_label.text = "Position: —"
