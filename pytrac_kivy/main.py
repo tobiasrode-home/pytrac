@@ -30,7 +30,7 @@ class PytracKivyApp(App):
     title = "PyTrac"
 
     def build(self):
-        self.settings = settings()
+        self.settings = settings
         self.api_client = create_api_client()
         self.selection = {"tractor": None, "implement": None, "field": None}
         self.screen_manager = ScreenManager(transition=NoTransition())
