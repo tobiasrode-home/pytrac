@@ -11,7 +11,7 @@ Config.set("graphics", "rotation", "270")
 from kivy.app import App
 from kivy.uix.screenmanager import Screen, ScreenManager, NoTransition
 
-from pytrac_core.config import get_settings
+from pytrac_core.config import settings
 from pytrac_kivy.dependencies import create_api_client
 from pytrac_kivy.ui.master_data_screen import MasterDataScreen
 from pytrac_kivy.ui.settings_screen import SettingsScreen
@@ -25,7 +25,7 @@ class PytracKivyApp(App):
     title = "PyTrac"
 
     def build(self):
-        self.settings = get_settings()
+        self.settings = settings()
         self.api_client = create_api_client()
         self.selection = {"tractor": None, "implement": None, "field": None}
         self.screen_manager = ScreenManager(transition=NoTransition())
