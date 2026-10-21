@@ -202,14 +202,14 @@ def configure_gps(uart: serial.Serial) -> bool:
 
     configured = rate_ok and all(message_results)
 
-    if configured:
+    #if configured:
         #logger.info(
         #    "[GPS CONFIG] Konfiguration vollständig bestätigt."
         #)
-    else:
-        logger.warning(
-            "[GPS CONFIG] Konfiguration nicht vollständig bestätigt."
-        )
+    #else:
+        #logger.warning(
+        #    "[GPS CONFIG] Konfiguration nicht vollständig bestätigt."
+        #)
 
     return configured
 
