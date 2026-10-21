@@ -1,3 +1,4 @@
+
 """Arbeitsübersicht für das aktuelle FastAPI-Backend.
 
 Die Oberfläche zeigt Maschinen-/Feldauswahl, Kartenansicht und Sensorstatus.
@@ -35,7 +36,6 @@ class WorkDashboard(BoxLayout):
     def __init__(
         self,
         api_url,
-        device_id="pico-tractor-01",
         selection=None,
         api_client=None,
         on_settings=None,
@@ -50,7 +50,6 @@ class WorkDashboard(BoxLayout):
             **kwargs,
         )
         self.api_url = api_url.rstrip("/")
-        self.device_id = device_id
         self.selection = selection if selection is not None else {}
         self.api_client = api_client
         self.on_settings = on_settings
@@ -140,8 +139,10 @@ class WorkDashboard(BoxLayout):
 
     @staticmethod
     def _status_label(text):
-        return Label(text=text, halign="left", valign="middle",
-                     size_hint_y=None, height=dp(42))
+        return Label(
+            text=text, halign="left", valign="middle",
+            size_hint_y=None, height=dp(42)
+        )
 
     def open_settings(self):
         if self.on_settings:
@@ -160,6 +161,7 @@ class WorkDashboard(BoxLayout):
         def name(kind, title):
             item = self.selection.get(kind)
             return item.get("name", "nicht gewählt") if item else "nicht gewählt"
+
         tractor = name("tractor", "Traktor")
         implement = name("implement", "Anbaugerät")
         field = name("field", "Feld")
