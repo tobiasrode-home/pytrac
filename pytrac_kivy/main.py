@@ -37,7 +37,6 @@ class PytracKivyApp(App):
 
         self.dashboard = WorkDashboard(
             api_url=self.settings.kivy_api_base_url,
-            device_id="pico-tractor-01",
             selection=self.selection,
             api_client=self.api_client,
             on_settings=self.show_settings,
