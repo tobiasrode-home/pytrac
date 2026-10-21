@@ -72,25 +72,3 @@ def vehicle_state(request: Request) -> dict[str, Any]:
     return _state_payload(request)
 
 
-@router.get("/sensors/{device_id}/latest")
-def latest_sensor_state(device_id: str, request: Request) -> dict[str, Any]:
-    """Kompatibilitätsroute für die bisherige Kivy-GPS-Erfassung.
-
-    device_id wird akzeptiert, weil die alte Oberfläche einen Gerätenamen
-    übermittelt. Die aktuelle Sensorarchitektur liefert einen gemeinsamen
-    synchronisierten Fahrzeugzustand statt pro Geräte-ID getrennte Zustände.
-    """
-    return _state_payload(request)
-
-
-@router.get("/sensors/{device_id}/status")
-def sensor_status(device_id: str, request: Request) -> dict[str, Any]:
-    payload = _state_payload(request)
-    return {
-        "device_id": device_id,
-        "available": payload.get("available", False),
-        "gps_valid": payload.get("gps_valid", False),
-        "imu_valid": payload.get("imu_valid", False),
-        "timestamp": payload.get("timestamp"),
-        "reason": payload.get("reason"),
-    }
