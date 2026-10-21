@@ -7,7 +7,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # Kivy-Konfiguration muss vor dem Import von App und anderen Kivy-Modulen erfolgen.
-
+from kivy.config import Config
 Config.set("graphics", "width", "1280")
 Config.set("graphics", "height", "720")
 Config.set("graphics", "resizable", "0")
