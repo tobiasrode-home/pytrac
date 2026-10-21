@@ -23,5 +23,5 @@ git clone https://github.com/tobiasrode-home/pytrac
 cp -r data pytrac/
 cp .env pytrac/
 cd pytrac/
-/usr/bin/python3 -m uvicorn pytrac_backend:app --host 0.0.0.0 --port 8000 --reload
+/usr/bin/python3 -m uvicorn pytrac_backend:app --host 0.0.0.0 --port 8000 --reload --no-acces-log
 ```
