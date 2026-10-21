@@ -16,14 +16,55 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 
+
+from pathlib import Path
+
+from kivy.graphics import PushMatrix, PopMatrix, Rotate
+
 try:
     from kivy_garden.mapview import MapView, MapMarker
     from pytrac_kivy.ui.map_layers import FieldOverlay, field_center
+
+    class TractorMarker(MapMarker):
+        """Traktorsymbol, das anhand des IMU-Winkels gedreht wird."""
+
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+
+            with self.canvas.before:
+                PushMatrix()
+                self._rotation = Rotate(
+                    angle=0,
+                    origin=self.center,
+                )
+
+            with self.canvas.after:
+                PopMatrix()
+
+            self.bind(pos=self._update_rotation_origin)
+            self.bind(size=self._update_rotation_origin)
+
+        def _update_rotation_origin(self, *_args):
+            self._rotation.origin = self.center
+
+        def set_heading(self, heading_deg):
+            # 0° zeigt nach oben (Norden), positive Winkel im Uhrzeigersinn.
+            self._rotation.angle = -float(heading_deg)
+
 except ImportError:
     MapView = None
     MapMarker = None
+    TractorMarker = None
     FieldOverlay = None
     field_center = None
+
+
+TRACTOR_ICON = (
+    Path(__file__).resolve().parents[1]
+    / "assets"
+    / "tractor.png"
+)
+
 
 
 GREEN = (0.16, 0.43, 0.28, 1)
@@ -215,16 +256,22 @@ class WorkDashboard(BoxLayout):
         lat, lon = data.get("latitude"), data.get("longitude")
         if gps_valid and lat is not None and lon is not None:
             self.position_label.text = f"Position: {float(lat):.6f}, {float(lon):.6f}"
-            if self.map_view:
-                self.map_view.center_on(float(lat), float(lon))
-                if MapMarker is not None:
-                    if self._marker is not None:
-                        try:
-                            self.map_view.remove_widget(self._marker)
-                        except Exception:
-                            pass
-                    self._marker = MapMarker(lat=float(lat), lon=float(lon))
+            if self.map_view and TractorMarker is not None:
+                if self._marker is None:
+                    self._marker = TractorMarker(
+                        lat=float(lat),
+                        lon=float(lon),
+                        source=str(TRACTOR_ICON),
+                        size=(dp(48), dp(48)),
+                    )
                     self.map_view.add_widget(self._marker)
+                self._marker.lat = float(lat)
+                self._marker.lon = float(lon)
+
+                 heading = data.get("heading_deg")
+                 if data.get("imu_valid") and heading is not None:
+                     self._marker.set_heading(heading)
+                        
         else:
             self.position_label.text = "Position: —"
         heading = data.get("heading_deg")
