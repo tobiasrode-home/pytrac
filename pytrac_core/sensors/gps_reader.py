@@ -332,7 +332,7 @@ class GpsReader:
 
                 if quality <= 0:
                     self._last_gga = None
-                    self._log_status(received_at)
+                    #self._log_status(received_at)
                     return None
 
                 self._last_gga = {
