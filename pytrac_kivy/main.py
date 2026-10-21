@@ -1,7 +1,12 @@
 """Startpunkt der PyTrac-Kivy-Anwendung."""
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 
 # Kivy-Konfiguration muss vor dem Import von App und anderen Kivy-Modulen erfolgen.
-from kivy.config import Config
 
 Config.set("graphics", "width", "1280")
 Config.set("graphics", "height", "720")
