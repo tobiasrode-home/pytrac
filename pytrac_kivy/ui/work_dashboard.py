@@ -257,6 +257,7 @@ class WorkDashboard(BoxLayout):
         if gps_valid and lat is not None and lon is not None:
             self.position_label.text = f"Position: {float(lat):.6f}, {float(lon):.6f}"
             if self.map_view and TractorMarker is not None:
+                self.map_view.center_on(float(lat), float(lon))
                 if self._marker is None:
                     self._marker = TractorMarker(
                         lat=float(lat),
