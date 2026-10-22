@@ -1,12 +1,11 @@
-
 from pytrac_core.persistence.base import Base
-
-# Alle Modelle importieren, damit SQLAlchemy sie registriert.
 from pytrac_core.persistence.models import (
     Field,
     GpsTrackPoint,
     Implement,
     Tractor,
+    WorkPlan,
+    WorkPlanPosition,
     WorkSession,
 )
 from pytrac_core.persistence.database import engine
