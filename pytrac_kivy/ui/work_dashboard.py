@@ -62,7 +62,7 @@ except ImportError:
 TRACTOR_ICON = (
     Path(__file__).resolve().parents[1]
     / "assets"
-    / "tractor.svg"
+    / "tractor.png"
 )
 
 
