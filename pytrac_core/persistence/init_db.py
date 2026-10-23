@@ -1,7 +1,6 @@
 from pytrac_core.persistence.base import Base
 from pytrac_core.persistence.models import (
     Field,
-    GpsTrackPoint,
     Implement,
     Tractor,
  )
