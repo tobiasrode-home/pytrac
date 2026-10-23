@@ -54,14 +54,11 @@
         <label>Feld<select id="wp-field" required><option value="">Bitte auswählen</option></select></label>
         <label>Traktor<select id="wp-tractor" required><option value="">Bitte auswählen</option></select></label>
         <label>Anbaugerät<select id="wp-implement" required><option value="">Bitte auswählen</option></select></label>
-        <label>Planungsdatum<input id="wp-date" type="date" required></label>
-        <label>Planungsuhrzeit<input id="wp-time" type="time" required></label>
         <label>Bezeichnung<input id="wp-name" maxlength="100" value="Arbeitsplanung" required></label>
         <label>Vorgewende-Tiefe (Arbeitsbreiten)<input id="wp-depth-widths" type="number" min="0.1" max="20" step="0.1" value="1" required></label>
-        <label>Vorgewende-Tiefe (m)<input id="wp-depth-m" type="number" min="0.1" max="100" step="0.1" value="5" required></label>
         <label>Vorgewende-Modus<select id="wp-headland-mode"><option value="all_around">Rundum</option><option value="headlands_only">Nur Feldenden</option></select></label>
         <label>Wendemanöver<select id="wp-maneuver"><option value="u_turn">U-Wende</option><option value="y_turn">Y-Wende</option></select></label>
-        <label>Zielgeschwindigkeit (km/h)<input id="wp-speed" type="number" min="0.1" max="30" step="0.5" value="8"></label>
+        <label>Geschwindigkeit (km/h)<input id="wp-speed" type="number" min="0.1" max="30" step="0.5" value="8"></label>
         <label class="wp-check"><span>Beetbau (nur U-Wende)</span><input id="wp-beet" type="checkbox"></label>
       </div>
       <h4>Feldgrenze, Referenzkante und Startpunkt</h4>
