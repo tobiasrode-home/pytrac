@@ -37,9 +37,6 @@ class Parameters:
     headland_start_passes: int | None = None
     headland_end_passes: int | None = None
     implement_work_offset_m: float = 0.0
-    headland_start_passes: int | None = None
-    headland_end_passes: int | None = None
-    implement_work_offset_m: float = 0.0
 
 
 def _unit(v):
@@ -97,6 +94,54 @@ def _turns(current, following, kind, radius):
             {"gear":"forward","coordinates_m":_xy_line(reverse_end,c)}]
 
 
+
+def _headland_tracks(polygon, xy, width, passes, mode, selected_edges, wgs):
+    """Gerade Randbahnen, seitenweise. Keine Übergangs- oder Rangiertrajektorien.
+
+    Der letzte (äußere) Streifen wird immer an die echte Feldkante
+    angelegt; Restbreite wird ausschließlich zur vorletzten Bahn überlappt.
+    """
+    result = []
+    count = len(xy)
+    from shapely.geometry import box
+    for edge_id in range(count):
+        a = xy[edge_id]
+        b = xy[(edge_id + 1) % count]
+        u = _unit((b[0]-a[0], b[1]-a[1]))
+        n = (-u[1], u[0])
+        probe = min(.1, width*.01)
+        middle = ((a[0]+b[0])/2, (a[1]+b[1])/2)
+        if not polygon.covers(Point(middle[0]+n[0]*probe,middle[1]+n[1]*probe)):
+            n = (-n[0],-n[1])
+        if mode == 'headlands_only' and edge_id not in selected_edges:
+            continue
+        side_passes = selected_edges.get(edge_id, passes) if mode == 'headlands_only' else passes
+        band_width = side_passes * width
+        # Feldseiten-Ecken werden durch Projektion auf die endliche
+        # Originalkante begrenzt; dies erzeugt bewusst keine Konturkurven.
+        # Für nicht-rechteckige Ecken kann ein unbearbeiteter Keil entstehen.
+        centers = [width*(k+.5) for k in range(side_passes)]
+        centers[-1] = band_width-width/2 if side_passes>1 else width/2
+        # Bandbreite ist eine ganzzahlige Anzahl Arbeitsbreiten, daher
+        # reguläre Bahnen ohne erzwungene Überlappung.
+        for k, distance in enumerate(reversed(centers)):
+            o = (a[0]+n[0]*distance, a[1]+n[1]*distance)
+            line = LineString([(o[0]-u[0]*100000,o[1]-u[1]*100000),
+                               (o[0]+u[0]*100000,o[1]+u[1]*100000)])
+            for segment in _segments(polygon.intersection(line)):
+                # Beschränkung auf die Projektion der tatsächlichen Feldseite.
+                lo = max(0., min((q[0]-a[0])*u[0]+(q[1]-a[1])*u[1] for q in (segment.coords[0],segment.coords[-1])))
+                hi = min(math.dist(a,b), max((q[0]-a[0])*u[0]+(q[1]-a[1])*u[1] for q in (segment.coords[0],segment.coords[-1])))
+                if hi-lo < max(.25,width*.2):continue
+                p0=[o[0]+u[0]*lo,o[1]+u[1]*lo]
+                p1=[o[0]+u[0]*hi,o[1]+u[1]*hi]
+                result.append({'side_id':edge_id,'pass_index':k+1,
+                               'length_m':round(hi-lo,2),
+                               'coordinates':[wgs(p0),wgs(p1)],
+                               'points_m':[p0,p1]})
+    return result
+
+
 def plan_route(params: Parameters) -> dict:
     if not math.isfinite(params.implement_lead_m) or params.implement_lead_m < 0:
         raise GuidanceError("Geräte-Vorlauf muss eine endliche, nichtnegative Meterzahl sein.")
@@ -104,10 +149,7 @@ def plan_route(params: Parameters) -> dict:
         raise GuidanceError("Geräte-Arbeitspunktversatz muss endlich sein.")
     if any(v is not None and not 1 <= v <= 100 for v in (params.headland_start_passes, params.headland_end_passes)):
         raise GuidanceError("Stirnseiten-Vorgewende muss 1 bis 100 Arbeitsbreiten betragen.")
-    if not math.isfinite(params.implement_work_offset_m):
-        raise GuidanceError("Geräte-Arbeitspunktversatz muss endlich sein.")
-    if any(v is not None and not 1 <= v <= 100 for v in (params.headland_start_passes, params.headland_end_passes)):
-        raise GuidanceError("Stirnseiten-Vorgewende muss 1 bis 100 Arbeitsbreiten betragen.")
+
     if params.working_width_m <= 0 or not math.isfinite(params.working_width_m):
         raise GuidanceError("Arbeitsbreite muss positiv und endlich sein.")
     if not 1 <= params.headland_passes <= 100:
@@ -158,8 +200,7 @@ def plan_route(params: Parameters) -> dict:
     margin = params.headland_passes*width
     start_margin = (params.headland_start_passes or params.headland_passes)*width
     end_margin = (params.headland_end_passes or params.headland_passes)*width
-    start_margin = (params.headland_start_passes or params.headland_passes)*width
-    end_margin = (params.headland_end_passes or params.headland_passes)*width
+
     # Bei "nur Stirnseiten" ist ein globaler Korridor entlang der
     # Fahrtrichtung falsch: an schrägen Stirnseiten entstehen sonst
     # unterschiedliche, teilweise zu kurze Vorgewendeabstände.
@@ -245,6 +286,39 @@ def plan_route(params: Parameters) -> dict:
         tracks.append({"id":i+1,"type":"work","offset_index":strip['offset'],
                        "length_m":strip['length_m'],
                        "coordinates":[wgs(p) for p in strip['points_m']]})
+    # V8: Vorgewende ist eine separate Phase nach dem Hauptfeld.
+    # Die Stirnseiten werden anhand der Kantennormalen und der
+    # Ausrichtung der Hauptspuren ermittelt.
+    side_candidates=[]
+    for j in range(n):
+        ea,eb=xy[j],xy[(j+1)%n]
+        v=_unit((eb[0]-ea[0],eb[1]-ea[1]))
+        signed=( (ea[0]+eb[0])/2-origin[0])*u[0]+((ea[1]+eb[1])/2-origin[1])*u[1]
+        side_candidates.append((j,abs(v[0]*u[0]+v[1]*u[1]),signed))
+    # Kanten quer zur Hauptspur: je ein Extrem in +/- Fahrtrichtung.
+    negative=min(side_candidates,key=lambda q:q[2])
+    positive=max(side_candidates,key=lambda q:q[2])
+    selected={negative[0]:params.headland_start_passes or params.headland_passes,
+              positive[0]:params.headland_end_passes or params.headland_passes}
+    headland_tracks=_headland_tracks(polygon,xy,width,params.headland_passes,
+                                    params.headland_mode,selected,wgs)
+    for k,t in enumerate(headland_tracks):
+        t['id']=k+1
+        t['type']='headland_work'
+    headland_events=[]
+    for t in headland_tracks:
+        a,b=t['points_m']
+        ux,uy=_unit((b[0]-a[0],b[1]-a[1]))
+        for action,pt in (('lower',a),('raise',b)):
+            stop=[pt[0]+ux*params.implement_work_offset_m,
+                  pt[1]+uy*params.implement_work_offset_m]
+            headland_events.append({'track_id':t['id'],'side_id':t['side_id'],
+                'phase':'headland','action':action,
+                'label':'Arbeitsgerät absenken' if action=='lower' else 'Arbeitsgerät ausheben',
+                'coordinate':wgs(stop),'vehicle_stop_coordinate':wgs(stop),
+                'work_boundary':wgs(pt),'requires_stop':True,
+                'requires_driver_confirmation':True})
+    for t in headland_tracks:t.pop('points_m')
     # Gerätebefehle: Der exakte Arbeitspunkt liegt jeweils an den beiden
     # Endpunkten der gekürzten Hauptfeldspur. Vorwarnungen sind optional.
     # Für den Vorlauf wird die Spurachse verlängert; diese Punkte sind
@@ -260,11 +334,7 @@ def plan_route(params: Parameters) -> dict:
             # ist deshalb vor der Arbeitsgrenze; negativ entsprechend dahinter.
             stop=[position[0]+ux*params.implement_work_offset_m,
                   position[1]+uy*params.implement_work_offset_m]
-            # work_offset_m: positiv = Arbeitspunkt liegt hinter dem
-            # Fahrzeug-Referenzpunkt in Fahrtrichtung. GPS-Stopppunkt
-            # ist deshalb vor der Arbeitsgrenze; negativ entsprechend dahinter.
-            stop=[position[0]+ux*params.implement_work_offset_m,
-                  position[1]+uy*params.implement_work_offset_m]
+
             event={"track_id":i+1,"action":action,
                    "label":"Arbeitsgerät absenken" if action=="lower" else "Arbeitsgerät ausheben",
                    "work_boundary":wgs(position),"coordinate":wgs(stop),
@@ -296,7 +366,9 @@ def plan_route(params: Parameters) -> dict:
                                "coordinates":[wgs(p) for p in segment['coordinates_m']]}
                               for segment in _turns(current,following,params.turn_type,radius)]
         transitions.append(item)
-    return {"implement_events":implement_events,"implement_lead_m":params.implement_lead_m,
+    return {"headland_tracks":headland_tracks,"headland_implement_events":headland_events,
+            "headland_track_count":len(headland_tracks),"headland_navigation":"straight_tracks_only_manual_repositioning",
+            "implement_events":implement_events,"implement_lead_m":params.implement_lead_m,
             "implement_control":"manual_driver_instruction",
             "start_point":tracks[0]['coordinates'][0],"tracks":tracks,
             "transitions":transitions,"track_count":len(tracks),
@@ -305,11 +377,10 @@ def plan_route(params: Parameters) -> dict:
             "headland_width_m":round(margin,2),
             "headland_start_width_m":round(start_margin,2),
             "headland_end_width_m":round(end_margin,2),
-            "headland_start_width_m":round(start_margin,2),
-            "headland_end_width_m":round(end_margin,2),
+
             "output_mode":params.output_mode,
             "turns_collision_checked":False,
             "turns_kinematically_validated":False,
-            "warnings":(["Wendekurven sind nur schematische Vorschläge: keine Grenz-, Hindernis- oder Kinematikprüfung. Nicht zur automatischen Lenkung verwenden."]
+            "warnings":(["Vorgewende: nur gerade Spuren, Umsetzen und Rückwärtsfahrt erfolgen eigenverantwortlich. Eckbereiche bei schrägen Feldseiten auf Restflächen prüfen.", "Wendekurven sind nur schematische Vorschläge: keine Grenz-, Hindernis- oder Kinematikprüfung. Nicht zur automatischen Lenkung verwenden."]
                         if params.output_mode == "turns" else
-                        ["Zielpunkte sind Navigationshilfen; die Verbindung zwischen den Spuren ist nicht geprüft."])}
+                        ["Vorgewende: nur gerade Spuren, Umsetzen und Rückwärtsfahrt erfolgen eigenverantwortlich. Eckbereiche bei schrägen Feldseiten auf Restflächen prüfen.", "Zielpunkte sind Navigationshilfen; die Verbindung zwischen den Spuren ist nicht geprüft."])}

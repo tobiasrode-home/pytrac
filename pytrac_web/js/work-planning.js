@@ -173,6 +173,11 @@ const WP = (() => {
       const line=L.polyline(track.coordinates.map(([lon,lat])=>[lat,lon]),{color:'#1466d4',weight:3}).addTo(state.guidanceLayers);
       line.bindTooltip(`Spur ${track.id} · ${track.length_m} m`);
     }
+    for(const track of result.headland_tracks||[]) {
+      L.polyline(track.coordinates.map(([lon,lat])=>[lat,lon]),
+        {color:'#16865b',weight:4,opacity:.8}).addTo(state.guidanceLayers)
+        .bindTooltip(`Vorgewende · Feldseite ${track.side_id+1} · Bahn ${track.pass_index} · ${track.length_m} m`);
+    }
     for(const transition of result.transitions) {
       const [lon,lat]=transition.target;
       L.circleMarker([lat,lon],{radius:4,color:'#e07820',fillOpacity:0.9}).addTo(state.guidanceLayers)
@@ -189,11 +194,11 @@ const WP = (() => {
     const explanation=document.createElement('p');explanation.className='muted';
     explanation.textContent='Rot/Grün markieren den Fahrzeug-Stopppunkt; der tatsächliche Arbeitsgrenzpunkt wird separat angezeigt. Anhalten und Gerätebedienung bestätigen ist erforderlich. Keine GPS-Live-Auslösung.';
     events.append(explanation);
-    for(const event of result.implement_events||[]) {
+    for(const event of [...(result.implement_events||[]),...(result.headland_implement_events||[])]) {
       const [lon,lat]=event.coordinate;
       const lower=event.action==='lower';
       L.circleMarker([lat,lon],{radius:6,color:lower?'#17643a':'#b42318',fillOpacity:0.9})
-        .addTo(state.guidanceLayers).bindTooltip(`Spur ${event.track_id}: ${event.label}`);
+        .addTo(state.guidanceLayers).bindTooltip(`${event.phase==='headland'?'Vorgewende Seite '+(event.side_id+1):'Hauptfeld'} Spur ${event.track_id}: ${event.label}`);
       if(event.advance_warning) {
         const [wx,wy]=event.advance_warning;
         L.circleMarker([wy,wx],{radius:4,color:'#e07820',dashArray:'3,3',fillOpacity:0.6})
@@ -203,11 +208,11 @@ const WP = (() => {
       const [workLon,workLat]=event.work_boundary;
       L.circleMarker([workLat,workLon],{radius:3,color:'#555',fillOpacity:0.7})
         .addTo(state.guidanceLayers).bindTooltip('Arbeitsgrenze des Anbaugeräts');
-      row.textContent=`Spur ${event.track_id} · STOPP & bestätigen: ${event.label} · Fahrzeug: ${lat.toFixed(7)}, ${lon.toFixed(7)} · Arbeitsgrenze: ${workLat.toFixed(7)}, ${workLon.toFixed(7)}`;
+      row.textContent=`${event.phase==='headland'?'Vorgewende Seite '+(event.side_id+1):'Hauptfeld'} · Spur ${event.track_id} · STOPP & bestätigen: ${event.label} · Fahrzeug: ${lat.toFixed(7)}, ${lon.toFixed(7)} · Arbeitsgrenze: ${workLat.toFixed(7)}, ${workLon.toFixed(7)}`;
       events.append(row);
     }
     el('wp-guidance-summary').textContent=`${result.track_count} Fahrspuren · ${result.work_length_m} m Arbeitsweg · `+
-      `${result.transitions.length} Übergänge. ${result.warnings.join(' ')}`;
+      `${result.headland_track_count||0} gerade Vorgewendespuren (grün) · ${result.transitions.length} Hauptfeld-Übergänge. ${result.warnings.join(' ')}`;
     status('Spurplanung vom Python-Backend berechnet.');
     return result;
   }
