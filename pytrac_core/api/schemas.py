@@ -1,10 +1,8 @@
-from datetime import date, time
+"""API-Datenmodelle für Stammdaten und Arbeitsplanung."""
+from datetime import datetime
 from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 from pytrac_core.persistence.models.implement import MountType
-
 
 class TractorCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -14,61 +12,31 @@ class TractorCreate(BaseModel):
     max_steering_angle_deg: float = Field(gt=0, lt=90)
     gps_offset_length_m: float = 0.0
     gps_offset_width_m: float = 0.0
-
-
-class TractorUpdate(TractorCreate):
-    pass
-
-
+class TractorUpdate(TractorCreate): pass
 class TractorRead(TractorCreate):
     id: int
     model_config = ConfigDict(from_attributes=True)
-
-
 class ImplementCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     length_m: float = Field(gt=0)
     working_width_m: float = Field(gt=0)
     mount_type: MountType
     work_offset_m: float
-
-
-class ImplementUpdate(ImplementCreate):
-    pass
-
-
+class ImplementUpdate(ImplementCreate): pass
 class ImplementRead(ImplementCreate):
     id: int
     model_config = ConfigDict(from_attributes=True)
-
-
 class FieldCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     boundary: list[list[float]]
-    reference_line: list[list[float]] = []
-
-    @model_validator(mode="after")
+    reference_line: list[list[float]] = Field(default_factory=list)
+    @model_validator(mode='after')
     def validate_boundary(self):
-        if len(self.boundary) < 4:
-            raise ValueError(
-                "Die Feldgrenze benötigt mindestens drei Punkte "
-                "und einen abschließenden Punkt zur Ringschließung."
-            )
-        if self.boundary[0] != self.boundary[-1]:
-            raise ValueError(
-                "Der erste und letzte Punkt der Feldgrenze müssen identisch sein."
-            )
+        if len(self.boundary) < 4 or self.boundary[0] != self.boundary[-1]:
+            raise ValueError('Die Feldgrenze muss mindestens drei Punkte haben und geschlossen sein.')
         return self
-
-
-class FieldBoundaryUpdate(BaseModel):
-    boundary: list[list[float]]
-
-
-class FieldReferenceLineUpdate(BaseModel):
-    reference_line: list[list[float]]
-
-
+class FieldBoundaryUpdate(BaseModel): boundary: list[list[float]]
+class FieldReferenceLineUpdate(BaseModel): reference_line: list[list[float]]
 class FieldRead(BaseModel):
     id: int
     name: str
@@ -77,172 +45,43 @@ class FieldRead(BaseModel):
     reference_line: list[list[float]]
     model_config = ConfigDict(from_attributes=True)
 
-# ---------------------------------------------------------------------------
-# Work Planning
-# ---------------------------------------------------------------------------
-
-
 class WorkPlanningBase(BaseModel):
-    """Gemeinsame Eingabefelder einer Arbeitsplanung."""
-
-    name: str = Field(
-        min_length=1,
-        max_length=150,
-        description="Bezeichnung der Arbeitsplanung",
-    )
-
-    tractor_id: int = Field(
-        gt=0,
-        description="ID des ausgewählten Traktors",
-    )
-
-    implement_id: int = Field(
-        gt=0,
-        description="ID des ausgewählten Anbaugeräts",
-    )
-
-    field_id: int = Field(
-        gt=0,
-        description="ID des ausgewählten Feldes",
-    )
-
-    speed: float | None = Field(
-        default=None,
-        gt=0,
-        description="Optionale Fahrgeschwindigkeit in km/h",
-    )
-
-    turn_type: Literal["u_turn", "y_turn"] = Field(
-        description="Gewähltes Wendemanöver",
-    )
-
-    headland_mode: Literal["all_around", "headlands_only"] = Field(
-        description="Vorgewende rund um das Feld oder nur an den Stirnseiten",
-    )
-
-    bed_working: bool = Field(
-        default=False,
-        description="Feld in Beeten bearbeiten; nur beim U-Turn zulässig",
-    )
-
-    # Referenz auf eine Grenze des Feldes, die zur Ausrichtung
-    # der regulären Fahrspuren verwendet wird.
-    alignment_boundary_id: str = Field(
-        min_length=1,
-        description="ID der Ausrichtungskante des Feldes",
-    )
-
-    # Zwei Grenzen, die den gewünschten Startbereich bestimmen.
-    start_boundary_a_id: str = Field(
-        min_length=1,
-        description="Erste Grenze zur Bestimmung des Startbereichs",
-    )
-
-    start_boundary_b_id: str = Field(
-        min_length=1,
-        description="Zweite Grenze zur Bestimmung des Startbereichs",
-    )
-
-    @model_validator(mode="after")
-    def validate_bed_working(self):
-        if self.bed_working and self.turn_type != "u_turn":
-            raise ValueError(
-                "Die Beetbearbeitung ist nur beim U-Turn möglich."
-            )
-
+    name: str = Field(min_length=1, max_length=150)
+    tractor_id: int = Field(gt=0)
+    implement_id: int = Field(gt=0)
+    field_id: int = Field(gt=0)
+    speed: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    turn_type: Literal['u_turn','y_turn'] = 'u_turn'
+    headland_mode: Literal['all_around','headlands_only'] = 'all_around'
+    bed_working: bool = False
+    alignment_boundary_id: str = Field(pattern=r'^edge-[0-9]+$')
+    start_boundary_a_id: str = Field(pattern=r'^edge-[0-9]+$')
+    start_boundary_b_id: str = Field(pattern=r'^edge-[0-9]+$')
+    headland_working_widths: int | None = Field(default=None, gt=0)
+    @model_validator(mode='after')
+    def validate_rules(self):
+        if self.bed_working and self.turn_type != 'u_turn':
+            raise ValueError('Beetbearbeitung ist nur mit U-Turn möglich.')
         if self.start_boundary_a_id == self.start_boundary_b_id:
-            raise ValueError(
-                "Für den Startbereich müssen zwei unterschiedliche "
-                "Feldgrenzen ausgewählt werden."
-            )
-
+            raise ValueError('Es müssen zwei unterschiedliche Startgrenzen gewählt werden.')
         return self
-
-
-class WorkPlanningPreviewRequest(WorkPlanningBase):
-    """Eingaben für die unverbindliche Planungsvorschau."""
-
-    headland_working_widths: int | None = Field(
-        default=None,
-        gt=0,
-        description=(
-            "Manuelle Anzahl der Vorgewende-Arbeitsbreiten. "
-            "Wenn nicht angegeben, berechnet das Backend den Standardwert."
-        ),
-    )
-
-
-class WorkPlanningCreate(WorkPlanningBase):
-    """Eingaben zum Speichern einer Arbeitsplanung."""
-
-    headland_working_widths: int | None = Field(
-        default=None,
-        gt=0,
-        description=(
-            "Gewünschte Anzahl der Vorgewende-Arbeitsbreiten. "
-            "Wenn nicht angegeben, wird der Standardwert verwendet."
-        ),
-    )
-
-    # Der Erstellungszeitpunkt wird ausschließlich serverseitig gesetzt.
-    # Dieses Feld wird absichtlich nicht als Eingabefeld angeboten.
-
-
-class WorkPlanningPreview(BaseModel):
-    """Ergebnis der serverseitigen Planungsvorschau."""
-
-    tractor_id: int
-    implement_id: int
-    field_id: int
-
-    tractor_length: float = Field(
-        gt=0,
-        description="Traktorlänge in Metern",
-    )
-
-    implement_length: float = Field(
-        gt=0,
-        description="Länge des Anbaugeräts in Metern",
-    )
-
-    working_width: float = Field(
-        gt=0,
-        description="Arbeitsbreite des Anbaugeräts in Metern",
-    )
-
-    default_headland_working_widths: int = Field(
-        gt=0,
-        description="Vom Backend berechneter Standardwert",
-    )
-
-    headland_working_widths: int = Field(
-        gt=0,
-        description="Tatsächlich gewählte Anzahl der Arbeitsbreiten",
-    )
-
-    speed: float | None = Field(
-        default=None,
-        gt=0,
-        description="Optionale Fahrgeschwindigkeit in km/h",
-    )
-
-
+class WorkPlanningCreate(WorkPlanningBase): pass
+class WorkPlanningPreviewRequest(WorkPlanningBase): pass
+class WorkPlanningDefaultsRequest(BaseModel):
+    tractor_id: int = Field(gt=0)
+    implement_id: int = Field(gt=0)
+class WorkPlanningDefaults(BaseModel):
+    default_headland_working_widths: int
+    tractor_length: float
+    implement_length: float
+    working_width: float
+class WorkPlanningPreview(WorkPlanningDefaults):
+    headland_working_widths: int
+    start_point: list[float]
+    start_boundary_ids: list[str]
 class WorkPlanningRead(WorkPlanningBase):
-    """Daten einer gespeicherten Arbeitsplanung."""
-
-    id: int = Field(
-        gt=0,
-        description="Eindeutige ID der Arbeitsplanung",
-    )
-
-    headland_working_widths: int = Field(
-        gt=0,
-        description="Gespeicherte Anzahl der Vorgewende-Arbeitsbreiten",
-    )
-
-    created_at: datetime = Field(
-        description="Serverseitiger Erstellungszeitpunkt mit Zeitzone",
-    )
-
+    id: int
+    headland_working_widths: int
+    start_point: list[float]
+    created_at: datetime
     model_config = ConfigDict(from_attributes=True)
-
