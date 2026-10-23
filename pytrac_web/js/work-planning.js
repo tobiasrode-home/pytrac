@@ -2,7 +2,7 @@
 /* Nur Darstellung und API-Kommunikation; fachliche Berechnungen im Python-Service. */
 const WP = (() => {
   const el = id => document.getElementById(id);
-  const state = {field:null, edges:[], selected:{alignment:null,start:[]}, mode:'alignment', map:null, layers:null, marker:null, defaults:null, override:false, guidanceLayers:null};
+  const state = {loadingSaved:false,field:null, edges:[], selected:{alignment:null,start:[]}, mode:'alignment', map:null, layers:null, marker:null, defaults:null, override:false, guidanceLayers:null};
   async function api(url, options={}) {
     const response = await fetch(url,{...options, headers:{'Content-Type':'application/json',...options.headers}});
     if(!response.ok) {
@@ -30,11 +30,57 @@ const WP = (() => {
         const name=document.createElement('span'); name.textContent=`${plan.name} · ${new Date(plan.created_at).toLocaleString('de-DE')} · ID ${plan.id}`;
         const del=document.createElement('button'); del.textContent='Löschen'; del.className='danger';
         del.addEventListener('click',async()=>{if(!confirm('Arbeitsplanung löschen?'))return;try{await api('/api/work-plannings/'+plan.id,{method:'DELETE'});await load();}catch(e){status(e.message,true);}});
-        line.append(name,del);list.append(line);
+        const open=document.createElement('button'); open.type='button'; open.textContent='Laden';
+        open.addEventListener('click',async()=>{try{await loadSaved(plan.id);}catch(e){status(e.message,true);}});
+        line.append(name,open,del);list.append(line);
       }
       await updateDefaults();
     } catch(e) {status(e.message,true);}
   }
+  async function loadSaved(id) {
+    // Datensatz frisch laden: nicht auf möglicherweise veraltete Listeneinträge vertrauen.
+    const plan=await api('/api/work-plannings/'+encodeURIComponent(id));
+    state.loadingSaved=true;
+    try {
+      // Stammdaten werden durch load() bereits bereitgestellt. Falls die Planung
+      // auf inzwischen gelöschte Stammdaten verweist, verständlich abbrechen.
+      for(const [field,value] of [['tractor',plan.tractor_id],['implement',plan.implement_id],['field',plan.field_id]]) {
+        const control=el('wp-'+field);
+        if(![...control.options].some(option=>option.value===String(value))) {
+          throw new Error(`Die gespeicherte Planung verweist auf einen nicht mehr vorhandenen Datensatz (${field}: ${value}).`);
+        }
+      }
+      el('wp-name').value=plan.name;
+      el('wp-tractor').value=String(plan.tractor_id);
+      el('wp-implement').value=String(plan.implement_id);
+      el('wp-field').value=String(plan.field_id);
+      el('wp-speed').value=plan.speed??'';
+      el('wp-turn').value=plan.turn_type;
+      el('wp-headland').value=plan.headland_mode;
+      el('wp-bed').checked=Boolean(plan.bed_working);
+      el('wp-bed').disabled=plan.turn_type!=='u_turn';
+      el('wp-widths').value=plan.headland_working_widths;
+      state.override=true;
+      await loadField();
+      const ids=[plan.alignment_boundary_id,plan.start_boundary_a_id,plan.start_boundary_b_id];
+      if(ids.some(edge=>!state.edges.some(item=>item.id===edge))) {
+        throw new Error('Die Feldgrenzen wurden seit dem Speichern verändert. Bitte Ausrichtung und Startgrenzen neu auswählen.');
+      }
+      state.selected={alignment:ids[0],start:[ids[1],ids[2]]};
+      updateSelection();
+      // Modus und Vorlauf sind bewusst keine gespeicherten Einstellungen.
+      // Vorhandene Anzeigeeinstellungen werden daher beibehalten.
+      await updateDefaults();
+      const previewResult=await preview();
+      await guidance(plan.id);
+      status(`Arbeitsplanung „${plan.name}“ (ID ${plan.id}) geladen. Die Planung kann erneut berechnet oder als neue Arbeit gespeichert werden.`);
+      el('wp-form').scrollIntoView({behavior:'smooth',block:'start'});
+      return previewResult;
+    } finally {
+      state.loadingSaved=false;
+    }
+  }
+
   async function updateDefaults() {
     const tractor=selected('tractor'), implement=selected('implement');
     if(!tractor||!implement) {el('wp-default').textContent='–';return;}
