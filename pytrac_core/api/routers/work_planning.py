@@ -1,7 +1,7 @@
 """REST-Endpunkte für die Arbeitsplanung."""
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
-from pytrac_core.api.schemas import (WorkPlanningCreate, WorkPlanningDefaults, WorkPlanningDefaultsRequest, WorkPlanningPreview, WorkPlanningPreviewRequest, WorkPlanningRead)
+from pytrac_core.api.schemas import (WorkPlanningCreate, WorkPlanningDefaults, WorkPlanningDefaultsRequest, WorkPlanningPreview, WorkPlanningPreviewRequest, WorkPlanningRead, GuidanceRequest, GuidanceSavedRequest)
 from pytrac_core.persistence.database import get_db
 from pytrac_core.services.work_planning_service import WorkPlanningService, WorkPlanningValidationError, WorkPlanningNotFoundError
 
@@ -38,3 +38,14 @@ def get(planning_id: int, db: Session=Depends(get_db)):
 def delete(planning_id: int, db: Session=Depends(get_db)):
     run(lambda: service(db).delete(planning_id))
     return Response(status_code=204)
+
+
+@router.post('/guidance')
+def guidance(data: GuidanceRequest, db: Session=Depends(get_db)):
+    """Spurplanung inkl. optionaler Wendeskizzen, ohne Speicherung."""
+    return run(lambda: service(db).guidance(data))
+
+@router.post('/{planning_id}/guidance')
+def saved_guidance(planning_id: int, data: GuidanceSavedRequest, db: Session=Depends(get_db)):
+    """Spurplanung aus gespeicherten Parametern, Modus nur für diese Anfrage."""
+    return run(lambda: service(db).guidance_for_saved(planning_id, data.output_mode))

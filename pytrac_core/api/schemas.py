@@ -85,3 +85,12 @@ class WorkPlanningRead(WorkPlanningBase):
     start_point: list[float]
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class GuidanceRequest(WorkPlanningPreviewRequest):
+    """Darstellungsmodus wird nur für diese Anfrage verwendet und nie gespeichert."""
+    output_mode: Literal['turns', 'targets'] = 'turns'
+
+
+class GuidanceSavedRequest(BaseModel):
+    output_mode: Literal['turns', 'targets'] = 'turns'

@@ -2,7 +2,7 @@
 /* Nur Darstellung und API-Kommunikation; fachliche Berechnungen im Python-Service. */
 const WP = (() => {
   const el = id => document.getElementById(id);
-  const state = {field:null, edges:[], selected:{alignment:null,start:[]}, mode:'alignment', map:null, layers:null, marker:null, defaults:null, override:false};
+  const state = {field:null, edges:[], selected:{alignment:null,start:[]}, mode:'alignment', map:null, layers:null, marker:null, defaults:null, override:false, guidanceLayers:null};
   async function api(url, options={}) {
     const response = await fetch(url,{...options, headers:{'Content-Type':'application/json',...options.headers}});
     if(!response.ok) {
@@ -46,7 +46,7 @@ const WP = (() => {
   }
   function resetMap() {
     state.field=null;state.edges=[];state.selected={alignment:null,start:[]};
-    if(state.layers)state.layers.clearLayers();if(state.marker){state.map.removeLayer(state.marker);state.marker=null;}
+    if(state.layers)state.layers.clearLayers();if(state.guidanceLayers)state.guidanceLayers.clearLayers();if(state.marker){state.map.removeLayer(state.marker);state.marker=null;}
     updateSelection();
   }
   async function loadField() {
@@ -58,7 +58,7 @@ const WP = (() => {
       if(!state.map) {
         state.map=L.map('wp-map').setView([51.3,9.5],13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(state.map);
-        state.layers=L.layerGroup().addTo(state.map);
+        state.layers=L.layerGroup().addTo(state.map);state.guidanceLayers=L.layerGroup().addTo(state.map);
       }
       const vertices=coordinates.slice(0,-1);
       L.polygon(vertices.map(([lon,lat])=>[lat,lon]),{color:'#5b8d5a',weight:2,fillOpacity:0.12,interactive:false}).addTo(state.layers);
@@ -109,6 +109,34 @@ const WP = (() => {
     state.marker=L.marker([lat,lon]).addTo(state.map).bindPopup('Startpunkt der regulären Fahrspuren').openPopup();
     return result;
   }
+  async function guidance(savedId=null) {
+    if(!state.map)throw new Error('Bitte zuerst ein Feld auf der Karte auswählen.');
+    const mode=selected('guidance-mode');
+    const url=savedId?`/api/work-plannings/${savedId}/guidance`:'/api/work-plannings/guidance';
+    const body=savedId?{output_mode:mode}:{...payload(),output_mode:mode};
+    const result=await api(url,{method:'POST',body:JSON.stringify(body)});
+    if(!state.guidanceLayers)state.guidanceLayers=L.layerGroup().addTo(state.map);
+    state.guidanceLayers.clearLayers();
+    for(const track of result.tracks) {
+      const line=L.polyline(track.coordinates.map(([lon,lat])=>[lat,lon]),{color:'#1466d4',weight:3}).addTo(state.guidanceLayers);
+      line.bindTooltip(`Spur ${track.id} · ${track.length_m} m`);
+    }
+    for(const transition of result.transitions) {
+      const [lon,lat]=transition.target;
+      L.circleMarker([lat,lon],{radius:4,color:'#e07820',fillOpacity:0.9}).addTo(state.guidanceLayers)
+        .bindTooltip(`Ziel: Spur ${transition.to_track}`);
+      for(const segment of transition.segments) {
+        L.polyline(segment.coordinates.map(([x,y])=>[y,x]),{
+          color:segment.gear==='reverse'?'#b42318':'#e07820',weight:3,
+          dashArray:segment.gear==='reverse'?'6,6':null
+        }).addTo(state.guidanceLayers);
+      }
+    }
+    el('wp-guidance-summary').textContent=`${result.track_count} Fahrspuren · ${result.work_length_m} m Arbeitsweg · `+
+      `${result.transitions.length} Übergänge. ${result.warnings.join(' ')}`;
+    status('Spurplanung vom Python-Backend berechnet.');
+    return result;
+  }
   async function save() {
     await preview();
     const result=await api('/api/work-plannings',{method:'POST',body:JSON.stringify(payload())});
@@ -128,6 +156,7 @@ const WP = (() => {
       document.querySelectorAll('[data-wp-mode]').forEach(b=>b.classList.toggle('active',b===button));
       status(state.mode==='alignment'?'Ausrichtungskante anklicken.':'Zwei angrenzende Startgrenzen anklicken.');
     });
+    el('wp-guidance').addEventListener('click',async()=>{try{await guidance();}catch(e){status(e.message,true);}});
     el('wp-preview').addEventListener('click',async()=>{try{await preview();status('Startpunkt vom Backend berechnet.');}catch(e){status(e.message,true);}});
     el('wp-form').addEventListener('submit',async event=>{event.preventDefault();try{await save();}catch(e){status(e.message,true);}});
   }

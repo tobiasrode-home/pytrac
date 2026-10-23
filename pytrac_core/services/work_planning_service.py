@@ -171,3 +171,36 @@ class WorkPlanningService:
         if row is None: raise WorkPlanningNotFoundError(f'Arbeitsplanung {planning_id} nicht gefunden.')
         self.db.delete(row)
         self.db.commit()
+
+    def guidance(self, data):
+        """Berechnet die komplette Spurplanung ohne Persistenz des Darstellungsmodus."""
+        from pytrac_core.services.guidance.route_planner import Parameters, plan_route, GuidanceError
+        tractor, implement, field = self._data(data.tractor_id, data.implement_id, data.field_id)
+        vertices = self._edges(field)
+        count = len(vertices)
+        widths = data.headland_working_widths or self.calculate_headland_widths(
+            tractor.length_m, implement.length_m, implement.working_width_m)
+        try:
+            return plan_route(Parameters(
+                boundary=json.loads(field.boundary_json),
+                alignment_edge=self._edge_index(data.alignment_boundary_id, count),
+                start_edge_a=self._edge_index(data.start_boundary_a_id, count),
+                start_edge_b=self._edge_index(data.start_boundary_b_id, count),
+                working_width_m=implement.working_width_m,
+                headland_passes=widths,
+                headland_mode=data.headland_mode,
+                turn_type=data.turn_type,
+                bed_working=data.bed_working,
+                wheelbase_m=tractor.wheelbase_m,
+                max_steering_angle_deg=tractor.max_steering_angle_deg,
+                output_mode=data.output_mode,
+            ))
+        except GuidanceError as exc:
+            raise WorkPlanningValidationError(str(exc)) from exc
+
+    def guidance_for_saved(self, planning_id, output_mode='turns'):
+        """Neu berechnen aus den gespeicherten Planungsparametern."""
+        from pytrac_core.api.schemas import GuidanceRequest
+        plan = self.get(planning_id)
+        return self.guidance(GuidanceRequest(**plan.model_dump(exclude={'id','start_point','created_at'}),
+                                             output_mode=output_mode))
