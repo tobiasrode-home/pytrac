@@ -1,104 +1,56 @@
-"""Kartenebenen für PyTrac: Feldgrenzen und gefahrene Spuren."""
-
-from kivy.graphics import Color, Line
+"""Feldgrenzen mit optionaler abstrakter, kartenfreier Darstellung."""
+from kivy.graphics import Color,Line,Rectangle
 from kivy_garden.mapview import MapLayer
 
-
 def _rings_from_field(field):
-    """Normalisiert Backend-Koordinatenlisten und GeoJSON auf Ringe."""
-    boundary = (field or {}).get("boundary") or []
-    if isinstance(boundary, dict):
-        geometry_type = boundary.get("type")
-        coordinates = boundary.get("coordinates") or []
-        if geometry_type == "Polygon":
-            return coordinates
-        if geometry_type == "MultiPolygon":
-            return [ring for polygon in coordinates for ring in polygon]
+    boundary=(field or {}).get('boundary') or []
+    if isinstance(boundary,dict):
+        coords=boundary.get('coordinates') or []
+        if boundary.get('type')=='Polygon':return coords
+        if boundary.get('type')=='MultiPolygon':return [ring for poly in coords for ring in poly]
         return []
-    # Aktuelles Backend: [[longitude, latitude], ...]
-    if isinstance(boundary, list) and boundary and isinstance(boundary[0], (list, tuple)):
-        if len(boundary[0]) >= 2 and all(
-            isinstance(value, (int, float)) for value in boundary[0][:2]
-        ):
-            return [boundary]
+    if isinstance(boundary,list) and boundary and isinstance(boundary[0],(list,tuple)):
+        if len(boundary[0])>=2 and all(isinstance(v,(int,float)) for v in boundary[0][:2]):return [boundary]
     return []
 
-
 def field_center(field):
-    """Ermittelt den Mittelpunkt der Feldgrenze."""
-    rings = _rings_from_field(field)
-    if not rings:
-        return None
-    points = rings[0]
-    if len(points) > 1 and points[0] == points[-1]:
-        points = points[:-1]
-    if not points:
-        return None
-    try:
-        longitude = sum(float(point[0]) for point in points) / len(points)
-        latitude = sum(float(point[1]) for point in points) / len(points)
-        return latitude, longitude
-    except (IndexError, TypeError, ValueError):
-        return None
-
+    rings=_rings_from_field(field)
+    if not rings:return None
+    pts=rings[0]
+    if len(pts)>1 and pts[0]==pts[-1]:pts=pts[:-1]
+    if not pts:return None
+    return sum(float(p[1]) for p in pts)/len(pts),sum(float(p[0]) for p in pts)/len(pts)
 
 class FieldOverlay(MapLayer):
-    """Zeichnet Feldgrenzen und GPS-Spuren über MapView."""
-
-    def __init__(self, map_view, **kwargs):
+    def __init__(self,map_view,**kwargs):
         super().__init__(**kwargs)
-        self.map_view = map_view
-        self.field = None
-        self.track_points = []
-
-    def set_data(self, field=None, track_points=None):
-        self.field = field
-        self.track_points = track_points or []
-        self.draw()
-
-    def reposition(self):
-        """Wird von MapView beim Verschieben und Zoomen aufgerufen."""
-        self.draw()
-
-    def _project(self, longitude, latitude):
-        return self.map_view.get_window_xy_from(
-            latitude,
-            longitude,
-            self.map_view.zoom,
-        )
-
+        self.map_view=map_view;self.field=None;self.track_points=[];self.abstract=False
+    def set_abstract(self,enabled):
+        self.abstract=bool(enabled);self.draw()
+    def set_data(self,field=None,track_points=None):
+        self.field=field;self.track_points=track_points or [];self.draw()
+    def reposition(self):self.draw()
     def draw(self):
         self.canvas.clear()
-
         with self.canvas:
-            if self.field:
-                for ring in _rings_from_field(self.field):
-                    points = []
-
-                    for coordinate in ring:
-                        try:
-                            lon = float(coordinate[0])
-                            lat = float(coordinate[1])
-                            x, y = self._project(lon, lat)
-                            points.extend([x, y])
-                        except (IndexError, TypeError, ValueError):
-                            continue
-
-                    if len(points) >= 6:
-                        Color(0.20, 0.95, 0.42, 1)
-                        Line(points=points, width=2.2, close=True)
-
-            track = []
-
+            if self.abstract:
+                Color(.065,.105,.09,1)
+                # Window-Koordinaten der Kartenfläche, keine globalen Screenkoordinaten.
+                Rectangle(pos=self.map_view.pos,size=self.map_view.size)
+            for ring in _rings_from_field(self.field):
+                pts=[]
+                for point in ring:
+                    try:
+                        x,y=self.map_view.get_window_xy_from(float(point[1]),float(point[0]),self.map_view.zoom)
+                        pts.extend((x,y))
+                    except (ValueError,TypeError,IndexError):continue
+                if len(pts)>=6:
+                    Color(.18,.95,.43,1);Line(points=pts,width=2.5,close=True)
+            coords=[]
             for point in self.track_points:
                 try:
-                    lat = float(point["latitude"])
-                    lon = float(point["longitude"])
-                    x, y = self._project(lon, lat)
-                    track.extend([x, y])
-                except (KeyError, IndexError, TypeError, ValueError):
-                    continue
-
-            if len(track) >= 4:
-                Color(1.0, 0.72, 0.12, 1)
-                Line(points=track, width=2.5)
+                    x,y=self.map_view.get_window_xy_from(float(point['latitude']),float(point['longitude']),self.map_view.zoom)
+                    coords.extend((x,y))
+                except (KeyError,ValueError,TypeError):continue
+            if len(coords)>=4:
+                Color(1,.72,.12,1);Line(points=coords,width=2.5)
