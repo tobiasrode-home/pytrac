@@ -78,7 +78,7 @@ app.include_router(tractors_router)
 app.include_router(implements_router)
 app.include_router(fields_router)
 app.include_router(sensors_router)
-app.include_router(work_plans)
+
 
 
 
