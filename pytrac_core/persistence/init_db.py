@@ -4,10 +4,7 @@ from pytrac_core.persistence.models import (
     GpsTrackPoint,
     Implement,
     Tractor,
-    WorkPlan,
-    WorkPlanPosition,
-    WorkSession,
-)
+ )
 from pytrac_core.persistence.database import engine
 
 
