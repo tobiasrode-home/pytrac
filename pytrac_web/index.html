@@ -38,8 +38,6 @@
     <button data-section="fields">Felder</button>
     <button data-section="tractors">Traktoren</button>
     <button data-section="implements">Anbaugeräte</button>
-    <button data-section="work">Arbeitsplanung</button>
-    <button data-section="history">Arbeitsgänge</button>
   </nav>
 
   <main class="container">
@@ -173,60 +171,6 @@
         </div>
       </form>
     </section>
-    <!-- ==========================================
-         ARBEITSPLANUNG
-         Die Oberfläche wird von work-planning.js
-         dynamisch in diesen Bereich eingefügt.
-         ========================================== -->
-    <section
-      id="section-work"
-      class="page-section hidden"
-      aria-label="Arbeitsplanung"
-    ></section>
-
-    <!-- ==========================================
-         ARBEITSGANG-HISTORIE
-         ========================================== -->
-    <section id="section-history" class="page-section hidden">
-      <div class="section-heading">
-        <h2>Gespeicherte Arbeitsgänge</h2>
-        <button type="button" id="history-refresh">
-          Aktualisieren
-        </button>
-      </div>
-
-      <div class="history-layout">
-        <article class="panel">
-          <h3>Arbeitsgänge</h3>
-          <p class="muted">
-            Wähle einen Arbeitsgang aus, um die gefahrene Strecke
-            auf der Karte anzuzeigen.
-          </p>
-          <div id="history-list" class="records-list">
-            <p>Lade Arbeitsgänge …</p>
-          </div>
-        </article>
-
-        <article class="panel">
-          <h3 id="history-map-title">Gefahrene Strecke</h3>
-          <div id="history-map"></div>
-
-          <div id="history-details" class="history-details">
-            Bitte einen Arbeitsgang auswählen.
-          </div>
-
-          <button
-            type="button"
-            class="danger"
-            id="history-delete"
-            disabled
-          >
-            Arbeitsgang löschen
-          </button>
-        </article>
-      </div>
-    </section>
-
   </main>
 
   <!-- ==========================================
@@ -238,7 +182,5 @@
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <script src="/js/map.js"></script>
   <script src="/js/app.js"></script>
-  <script src="/js/work-planning.js"></script>
-  <script src="/js/work-history.js"></script>
 </body>
 </html>
