@@ -194,13 +194,14 @@ class WorkPlanningService:
                 wheelbase_m=tractor.wheelbase_m,
                 max_steering_angle_deg=tractor.max_steering_angle_deg,
                 output_mode=data.output_mode,
+                implement_lead_m=data.implement_lead_m,
             ))
         except GuidanceError as exc:
             raise WorkPlanningValidationError(str(exc)) from exc
 
-    def guidance_for_saved(self, planning_id, output_mode='turns'):
+    def guidance_for_saved(self, planning_id, output_mode='turns', implement_lead_m=0.0):
         """Neu berechnen aus den gespeicherten Planungsparametern."""
         from pytrac_core.api.schemas import GuidanceRequest
         plan = self.get(planning_id)
         return self.guidance(GuidanceRequest(**plan.model_dump(exclude={'id','start_point','created_at'}),
-                                             output_mode=output_mode))
+                                             output_mode=output_mode, implement_lead_m=implement_lead_m))

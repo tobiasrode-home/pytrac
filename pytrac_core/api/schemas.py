@@ -90,7 +90,9 @@ class WorkPlanningRead(WorkPlanningBase):
 class GuidanceRequest(WorkPlanningPreviewRequest):
     """Darstellungsmodus wird nur für diese Anfrage verwendet und nie gespeichert."""
     output_mode: Literal['turns', 'targets'] = 'turns'
+    implement_lead_m: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
 
 
 class GuidanceSavedRequest(BaseModel):
     output_mode: Literal['turns', 'targets'] = 'turns'
+    implement_lead_m: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)

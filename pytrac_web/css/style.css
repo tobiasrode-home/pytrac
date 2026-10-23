@@ -7,3 +7,6 @@
 .wp-guidance-options select { display:block; width:100%; }
 .wp-guidance-options p { flex-basis:100%; margin:0; }
 #wp-guidance-summary { margin:10px 0; font-weight:500; }
+
+.wp-implement-events { margin-top: 1rem; max-height: 19rem; overflow-y: auto; border-top: 1px solid var(--border); padding-top: .75rem; }
+.wp-implement-events p { margin: .35rem 0; }

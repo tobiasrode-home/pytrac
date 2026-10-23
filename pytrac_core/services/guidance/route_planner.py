@@ -33,6 +33,7 @@ class Parameters:
     wheelbase_m: float = 3.0
     max_steering_angle_deg: float = 35.0
     output_mode: Literal["turns", "targets"] = "turns"
+    implement_lead_m: float = 0.0
 
 
 def _unit(v):
@@ -91,6 +92,8 @@ def _turns(current, following, kind, radius):
 
 
 def plan_route(params: Parameters) -> dict:
+    if not math.isfinite(params.implement_lead_m) or params.implement_lead_m < 0:
+        raise GuidanceError("Geräte-Vorlauf muss eine endliche, nichtnegative Meterzahl sein.")
     if params.working_width_m <= 0 or not math.isfinite(params.working_width_m):
         raise GuidanceError("Arbeitsbreite muss positiv und endlich sein.")
     if not 1 <= params.headland_passes <= 100:
@@ -128,33 +131,25 @@ def plan_route(params: Parameters) -> dict:
         normal = (-normal[0],-normal[1])
     width = params.working_width_m
     margin = params.headland_passes*width
-    # Bei all_around wird die Fläche ringsherum verkleinert.
-    # Bei headlands_only nur an den beiden Stirnseiten in Fahrtrichtung.
+    # Bei "nur Stirnseiten" ist ein globaler Korridor entlang der
+    # Fahrtrichtung falsch: an schrägen Stirnseiten entstehen sonst
+    # unterschiedliche, teilweise zu kurze Vorgewendeabstände.
+    # Stattdessen wird JEDE geschnittene Fahrspur an BEIDEN Enden um
+    # die gewählte Vorgewendebreite gekürzt.
+    # Der halbe Arbeitsbreitenabstand schützt die seitlichen Ränder
+    # vor einer Arbeitsgeräte-Überdeckung außerhalb des Polygons.
     if params.headland_mode == "all_around":
-        usable = polygon.buffer(-margin,join_style=2)
+        usable = polygon.buffer(-margin, join_style=2)
     else:
-        along = [((x-origin[0])*u[0]+(y-origin[1])*u[1]) for x,y in xy]
-        low,high = min(along)+margin,max(along)-margin
-        if high <= low:
-            raise GuidanceError("Feld zu kurz für das gewählte Vorgewende.")
-        mid=(low+high)/2
-        base=(origin[0]+u[0]*mid,origin[1]+u[1]*mid)
-        slab=LineString([(base[0]-normal[0]*100000,base[1]-normal[1]*100000),
-                         (base[0]+normal[0]*100000,base[1]+normal[1]*100000)]).buffer((high-low)/2,cap_style=2)
-        # Statt eines Rundungsbuffers wird ein rechteckiger Korridor verwendet.
-        def pt(s,t): return (origin[0]+u[0]*s+normal[0]*t,origin[1]+u[1]*s+normal[1]*t)
-        slab=Polygon([pt(low,-100000),pt(high,-100000),pt(high,100000),pt(low,100000)])
-        usable=polygon.intersection(slab)
+        usable = polygon.buffer(-width / 2, join_style=2)
     if usable.is_empty:
         raise GuidanceError("Keine Fläche innerhalb des Vorgewendes vorhanden.")
     offsets=[((x-origin[0])*normal[0]+(y-origin[1])*normal[1]) for x,y in xy]
     min_offset,max_offset=min(offsets),max(offsets)
-    if params.headland_mode == "all_around":
-        start=min_offset+margin+width/2
-        stop=max_offset-margin-width/2
-    else:
-        start=min_offset+width/2
-        stop=max_offset-width/2
+    # Zentren der Arbeitsstreifen liegen mindestens eine halbe
+    # Arbeitsbreite innerhalb der äußeren Feldgrenzen.
+    start=min_offset+width/2
+    stop=max_offset-width/2
     if stop < start:
         raise GuidanceError("Feld zu schmal für die Fahrspuren.")
     strips=[]
@@ -169,7 +164,20 @@ def plan_route(params: Parameters) -> dict:
             a,b=segment.coords[0],segment.coords[-1]
             if (b[0]-a[0])*u[0]+(b[1]-a[1])*u[1]<0:
                 a,b=b,a
-            strips.append({"offset":i,"length_m":round(segment.length,2),"points_m":_xy_line(a,b)})
+            if params.headland_mode == "headlands_only":
+                # Abstand an der tatsächlichen, lokalen Stirnseite
+                # der jeweiligen Spur, nicht am globalen Feld-Extremum.
+                # Der seitliche Innenpuffer ist für die Spurmitte
+                # erforderlich und bleibt unverändert.
+                length=math.dist(a,b)
+                if length <= 2*margin+max(0.25,width*0.2):
+                    continue
+                a=(a[0]+u[0]*margin,a[1]+u[1]*margin)
+                b=(b[0]-u[0]*margin,b[1]-u[1]*margin)
+            length=math.dist(a,b)
+            if length < max(0.25,width*0.2):
+                continue
+            strips.append({"offset":i,"length_m":round(length,2),"points_m":_xy_line(a,b)})
     if not strips:
         raise GuidanceError("Keine regulären Fahrspuren innerhalb des Feldes.")
     corner=Point(xy[corner_index])
@@ -198,6 +206,32 @@ def plan_route(params: Parameters) -> dict:
         tracks.append({"id":i+1,"type":"work","offset_index":strip['offset'],
                        "length_m":strip['length_m'],
                        "coordinates":[wgs(p) for p in strip['points_m']]})
+    # Gerätebefehle: Der exakte Arbeitspunkt liegt jeweils an den beiden
+    # Endpunkten der gekürzten Hauptfeldspur. Vorwarnungen sind optional.
+    # Für den Vorlauf wird die Spurachse verlängert; diese Punkte sind
+    # Hinweispositionen und KEINE geprüften, befahrbaren Routenpunkte.
+    implement_events=[]
+    for i, strip in enumerate(ordered):
+        a,b=strip['points_m'][0],strip['points_m'][-1]
+        ux,uy=_unit((b[0]-a[0],b[1]-a[1]))
+        length=math.dist(a,b)
+        for action, position, direction in (("lower",a,-1),("raise",b,-1)):
+            event={"track_id":i+1,"action":action,
+                   "label":"Arbeitsgerät absenken" if action=="lower" else "Arbeitsgerät ausheben",
+                   "work_boundary":wgs(position),"coordinate":wgs(position),
+                   "reference":"Hauptfeld/Vorgewende", "lead_m":params.implement_lead_m}
+            if params.implement_lead_m:
+                # Vor Beginn: vor der Spur. Vor Ende: innerhalb der Spur.
+                # Nur bei langen Spuren sinnvoll; Warnpunkt sonst entfällt.
+                if action=="lower":
+                    warning=[a[0]-ux*params.implement_lead_m,a[1]-uy*params.implement_lead_m]
+                elif params.implement_lead_m < length:
+                    warning=[b[0]-ux*params.implement_lead_m,b[1]-uy*params.implement_lead_m]
+                else:
+                    warning=None
+                if warning is not None:
+                    event['advance_warning']=wgs(warning)
+            implement_events.append(event)
     radius=params.wheelbase_m/math.tan(math.radians(params.max_steering_angle_deg))
     transitions=[]
     for i in range(len(ordered)-1):
@@ -210,7 +244,9 @@ def plan_route(params: Parameters) -> dict:
                                "coordinates":[wgs(p) for p in segment['coordinates_m']]}
                               for segment in _turns(current,following,params.turn_type,radius)]
         transitions.append(item)
-    return {"start_point":tracks[0]['coordinates'][0],"tracks":tracks,
+    return {"implement_events":implement_events,"implement_lead_m":params.implement_lead_m,
+            "implement_control":"manual_driver_instruction",
+            "start_point":tracks[0]['coordinates'][0],"tracks":tracks,
             "transitions":transitions,"track_count":len(tracks),
             "work_length_m":round(sum(t['length_m'] for t in tracks),2),
             "minimum_turning_radius_m":round(radius,2),

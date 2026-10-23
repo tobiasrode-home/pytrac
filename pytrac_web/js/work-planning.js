@@ -112,8 +112,10 @@ const WP = (() => {
   async function guidance(savedId=null) {
     if(!state.map)throw new Error('Bitte zuerst ein Feld auf der Karte auswählen.');
     const mode=selected('guidance-mode');
+    const lead=Number(selected('implement-lead'));
+    if(!Number.isFinite(lead)||lead<0||lead>100)throw new Error('Vorlauf muss zwischen 0 und 100 m liegen.');
     const url=savedId?`/api/work-plannings/${savedId}/guidance`:'/api/work-plannings/guidance';
-    const body=savedId?{output_mode:mode}:{...payload(),output_mode:mode};
+    const body=savedId?{output_mode:mode,implement_lead_m:lead}:{...payload(),output_mode:mode,implement_lead_m:lead};
     const result=await api(url,{method:'POST',body:JSON.stringify(body)});
     if(!state.guidanceLayers)state.guidanceLayers=L.layerGroup().addTo(state.map);
     state.guidanceLayers.clearLayers();
@@ -131,6 +133,25 @@ const WP = (() => {
           dashArray:segment.gear==='reverse'?'6,6':null
         }).addTo(state.guidanceLayers);
       }
+    }
+    const events=el('wp-implement-events');events.replaceChildren();
+    const heading=document.createElement('h3');heading.textContent='Arbeitsgerät – geplante Anweisungen';events.append(heading);
+    const explanation=document.createElement('p');explanation.className='muted';
+    explanation.textContent='Die Markierungen beziehen sich auf die Hauptfeldspuren. Es gibt noch keine GPS-gestützte Live-Auslösung; Gerätebewegung und Vorlauf muss der Fahrer berücksichtigen.';
+    events.append(explanation);
+    for(const event of result.implement_events||[]) {
+      const [lon,lat]=event.coordinate;
+      const lower=event.action==='lower';
+      L.circleMarker([lat,lon],{radius:6,color:lower?'#17643a':'#b42318',fillOpacity:0.9})
+        .addTo(state.guidanceLayers).bindTooltip(`Spur ${event.track_id}: ${event.label}`);
+      if(event.advance_warning) {
+        const [wx,wy]=event.advance_warning;
+        L.circleMarker([wy,wx],{radius:4,color:'#e07820',dashArray:'3,3',fillOpacity:0.6})
+          .addTo(state.guidanceLayers).bindTooltip(`Vorlauf ${event.lead_m} m: ${event.label}`);
+      }
+      const row=document.createElement('p');
+      row.textContent=`Spur ${event.track_id} · ${event.label} · ${lat.toFixed(7)}, ${lon.toFixed(7)}`;
+      events.append(row);
     }
     el('wp-guidance-summary').textContent=`${result.track_count} Fahrspuren · ${result.work_length_m} m Arbeitsweg · `+
       `${result.transitions.length} Übergänge. ${result.warnings.join(' ')}`;
