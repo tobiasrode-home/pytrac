@@ -58,6 +58,10 @@ class WorkPlanningBase(BaseModel):
     start_boundary_a_id: str = Field(pattern=r'^edge-[0-9]+$')
     start_boundary_b_id: str = Field(pattern=r'^edge-[0-9]+$')
     headland_working_widths: int | None = Field(default=None, gt=0)
+    headland_start_passes: int | None = Field(default=None, ge=1, le=100)
+    headland_end_passes: int | None = Field(default=None, ge=1, le=100)
+    headland_start_passes: int | None = Field(default=None, ge=1, le=100)
+    headland_end_passes: int | None = Field(default=None, ge=1, le=100)
     @model_validator(mode='after')
     def validate_rules(self):
         if self.bed_working and self.turn_type != 'u_turn':

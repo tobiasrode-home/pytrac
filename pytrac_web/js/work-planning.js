@@ -60,6 +60,8 @@ const WP = (() => {
       el('wp-bed').checked=Boolean(plan.bed_working);
       el('wp-bed').disabled=plan.turn_type!=='u_turn';
       el('wp-widths').value=plan.headland_working_widths;
+      el('wp-end-a').value=plan.headland_start_passes??'';
+      el('wp-end-b').value=plan.headland_end_passes??'';
       state.override=true;
       await loadField();
       const ids=[plan.alignment_boundary_id,plan.start_boundary_a_id,plan.start_boundary_b_id];
@@ -144,7 +146,9 @@ const WP = (() => {
     return {name:selected('name').trim(),tractor_id:+selected('tractor'),implement_id:+selected('implement'),field_id:+selected('field'),
       speed:speed===''?null:Number(speed),turn_type:selected('turn'),headland_mode:selected('headland'),bed_working:el('wp-bed').checked,
       alignment_boundary_id:state.selected.alignment,start_boundary_a_id:state.selected.start[0],start_boundary_b_id:state.selected.start[1],
-      headland_working_widths:widths===''?null:Number(widths)};
+      headland_working_widths:widths===''?null:Number(widths),
+      headland_start_passes:selected('end-a').trim()===''?null:Number(selected('end-a')),
+      headland_end_passes:selected('end-b').trim()===''?null:Number(selected('end-b'))};
   }
   async function preview() {
     const result=await api('/api/work-plannings/preview',{method:'POST',body:JSON.stringify(payload())});
@@ -183,7 +187,7 @@ const WP = (() => {
     const events=el('wp-implement-events');events.replaceChildren();
     const heading=document.createElement('h3');heading.textContent='Arbeitsgerät – geplante Anweisungen';events.append(heading);
     const explanation=document.createElement('p');explanation.className='muted';
-    explanation.textContent='Die Markierungen beziehen sich auf die Hauptfeldspuren. Es gibt noch keine GPS-gestützte Live-Auslösung; Gerätebewegung und Vorlauf muss der Fahrer berücksichtigen.';
+    explanation.textContent='Rot/Grün markieren den Fahrzeug-Stopppunkt; der tatsächliche Arbeitsgrenzpunkt wird separat angezeigt. Anhalten und Gerätebedienung bestätigen ist erforderlich. Keine GPS-Live-Auslösung.';
     events.append(explanation);
     for(const event of result.implement_events||[]) {
       const [lon,lat]=event.coordinate;
@@ -196,7 +200,10 @@ const WP = (() => {
           .addTo(state.guidanceLayers).bindTooltip(`Vorlauf ${event.lead_m} m: ${event.label}`);
       }
       const row=document.createElement('p');
-      row.textContent=`Spur ${event.track_id} · ${event.label} · ${lat.toFixed(7)}, ${lon.toFixed(7)}`;
+      const [workLon,workLat]=event.work_boundary;
+      L.circleMarker([workLat,workLon],{radius:3,color:'#555',fillOpacity:0.7})
+        .addTo(state.guidanceLayers).bindTooltip('Arbeitsgrenze des Anbaugeräts');
+      row.textContent=`Spur ${event.track_id} · STOPP & bestätigen: ${event.label} · Fahrzeug: ${lat.toFixed(7)}, ${lon.toFixed(7)} · Arbeitsgrenze: ${workLat.toFixed(7)}, ${workLon.toFixed(7)}`;
       events.append(row);
     }
     el('wp-guidance-summary').textContent=`${result.track_count} Fahrspuren · ${result.work_length_m} m Arbeitsweg · `+

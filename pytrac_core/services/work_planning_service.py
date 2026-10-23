@@ -132,7 +132,9 @@ class WorkPlanningService:
     def preview(self, data):
         defaults = self.defaults(data)
         _, implement, field = self._data(data.tractor_id, data.implement_id, data.field_id)
-        point = self._geometry(data, field, implement.working_width_m)
+        # Vorschau und Fahrspurplanung müssen denselben Startpunkt liefern.
+        from pytrac_core.api.schemas import GuidanceRequest
+        point = self.guidance(GuidanceRequest(**data.model_dump(), output_mode='targets'))['start_point']
         return WorkPlanningPreview(**defaults.model_dump(),
             headland_working_widths=data.headland_working_widths or defaults.default_headland_working_widths,
             start_point=point,
@@ -195,6 +197,9 @@ class WorkPlanningService:
                 max_steering_angle_deg=tractor.max_steering_angle_deg,
                 output_mode=data.output_mode,
                 implement_lead_m=data.implement_lead_m,
+                headland_start_passes=data.headland_start_passes,
+                headland_end_passes=data.headland_end_passes,
+                implement_work_offset_m=implement.work_offset_m,
             ))
         except GuidanceError as exc:
             raise WorkPlanningValidationError(str(exc)) from exc

@@ -19,6 +19,10 @@ class WorkPlanning(Base):
     start_boundary_a_id: Mapped[str] = mapped_column(String(30), nullable=False)
     start_boundary_b_id: Mapped[str] = mapped_column(String(30), nullable=False)
     headland_working_widths: Mapped[int] = mapped_column(Integer, nullable=False)
+    headland_start_passes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    headland_end_passes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    headland_start_passes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    headland_end_passes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     start_point_json: Mapped[str] = mapped_column(Text, nullable=False)
     # Reserviert für die spätere Fahrspur-/Wendemanöver-Geometrie.
     guidance_json: Mapped[str | None] = mapped_column(Text, nullable=True)

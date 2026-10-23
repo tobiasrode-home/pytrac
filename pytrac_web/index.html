@@ -12,6 +12,8 @@
 <label>Bezeichnung<input id="wp-name" maxlength="150" required placeholder="z. B. Pflügen Nordfeld"></label>
 <label>Traktor<select id="wp-tractor" required></select></label><label>Anbaugerät<select id="wp-implement" required></select></label><label>Feld<select id="wp-field" required></select></label>
 <label>Vorgewende (Arbeitsbreiten)<input id="wp-widths" type="number" min="1" step="1"><span class="muted">Backend-Standard: <strong id="wp-default">–</strong></span><button id="wp-reset-widths" type="button">Standard übernehmen</button></label>
+<label>Vorgewende Stirnseite A (Arbeitsbreiten, optional)<input id="wp-end-a" type="number" min="1" max="100" step="1" placeholder="wie Standard"><span class="muted">Am Anfang der Referenzkanten-Richtung</span></label>
+<label>Vorgewende Stirnseite B (Arbeitsbreiten, optional)<input id="wp-end-b" type="number" min="1" max="100" step="1" placeholder="wie Standard"><span class="muted">Am Ende der Referenzkanten-Richtung; nur bei „Nur an Stirnseiten“ wirksam</span></label>
 <label>Sollgeschwindigkeit (km/h, optional)<input id="wp-speed" type="number" min="0.1" step="any" placeholder="optional"></label>
 <label>Wendemanöver<select id="wp-turn"><option value="u_turn">U-Turn</option><option value="y_turn">Y-Wendung</option></select></label>
 <label>Vorgewende<select id="wp-headland"><option value="all_around">Rund um das Feld</option><option value="headlands_only">Nur an Stirnseiten</option></select></label>
