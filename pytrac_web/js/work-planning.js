@@ -1,605 +1,136 @@
-
 "use strict";
-
-/*
- * pytrac_web/js/work-planning.js
- *
- * Frontend für die Arbeitsplanung.
- *
- * Enthält ausschließlich:
- * - Formularbedienung
- * - Laden vorhandener Stammdaten
- * - API-Aufrufe
- * - Entgegennahme von Kartenklicks
- * - Darstellung der Backend-Ergebnisse
- *
- * Keine fachlichen Berechnungen und keine Geometrieverarbeitung.
- */
-
-const WORK_PLANNING_API = {
-  fields: "/api/fields",
-  tractors: "/api/tractors",
-  implements: "/api/implements",
-  preview: "/api/work-plannings/preview",
-  save: "/api/work-plannings",
-  mapSelection: "/api/work-plannings/map-selection",
-};
-
-const workPlanningState = {
-  fields: [],
-  tractors: [],
-  implements: [],
-  selectionMode: null,
-  selectedStartPoint: null,
-  selectedAlignmentBoundary: null,
-  selectedStartBoundaryA: null,
-  selectedStartBoundaryB: null,
-  mapClickHandler: null,
-};
-
-
-/* ---------------------------------------------------------
- * Allgemeine Hilfsfunktionen für die Oberfläche
- * --------------------------------------------------------- */
-
-function workPlanningElement(id) {
-  return typeof $ === "function"
-    ? $(id)
-    : document.getElementById(id);
-}
-
-
-function setWorkPlanningStatus(message, isError = false) {
-  const element = workPlanningElement("work-planning-status");
-
-  if (!element) {
-    return;
+/* Nur Darstellung und API-Kommunikation; fachliche Berechnungen im Python-Service. */
+const WP = (() => {
+  const el = id => document.getElementById(id);
+  const state = {field:null, edges:[], selected:{alignment:null,start:[]}, mode:'alignment', map:null, layers:null, marker:null, defaults:null, override:false};
+  async function api(url, options={}) {
+    const response = await fetch(url,{...options, headers:{'Content-Type':'application/json',...options.headers}});
+    if(!response.ok) {
+      let detail; try { detail=(await response.json()).detail; } catch { detail=response.statusText; }
+      throw new Error(typeof detail==='string'?detail:JSON.stringify(detail));
+    }
+    return response.status===204?null:response.json();
   }
-
-  element.textContent = message;
-  element.classList.toggle("error", isError);
-  element.setAttribute(
-    "role",
-    isError ? "alert" : "status",
-  );
-}
-
-
-async function workPlanningRequest(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Accept: "application/json",
-      ...(options.body
-        ? { "Content-Type": "application/json" }
-        : {}),
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    let message = `Anfrage fehlgeschlagen (${response.status}).`;
-
+  function status(message, error=false) { el('wp-status').textContent=message; el('wp-status').classList.toggle('error',error); }
+  function selected(name) { return el('wp-'+name).value; }
+  function optionList(id, records) {
+    const select=el(id), old=select.value;
+    select.replaceChildren(new Option('Bitte auswählen',''));
+    for(const record of records) select.add(new Option(record.name,record.id));
+    if([...select.options].some(option=>option.value===old)) select.value=old;
+  }
+  async function load() {
     try {
-      const body = await response.json();
-
-      if (typeof body.detail === "string") {
-        message = body.detail;
-      } else if (Array.isArray(body.detail)) {
-        message = body.detail
-          .map(item => item.msg || JSON.stringify(item))
-          .join("; ");
+      const [tractors,implementsList,fields,plans]=await Promise.all([
+        api('/api/tractors'),api('/api/implements'),api('/api/fields'),api('/api/work-plannings')]);
+      optionList('wp-tractor',tractors); optionList('wp-implement',implementsList); optionList('wp-field',fields);
+      const list=el('wp-list'); list.replaceChildren();
+      for(const plan of plans) {
+        const line=document.createElement('div'); line.className='wp-plan-row';
+        const name=document.createElement('span'); name.textContent=`${plan.name} · ${new Date(plan.created_at).toLocaleString('de-DE')} · ID ${plan.id}`;
+        const del=document.createElement('button'); del.textContent='Löschen'; del.className='danger';
+        del.addEventListener('click',async()=>{if(!confirm('Arbeitsplanung löschen?'))return;try{await api('/api/work-plannings/'+plan.id,{method:'DELETE'});await load();}catch(e){status(e.message,true);}});
+        line.append(name,del);list.append(line);
       }
-    } catch {
-      // Keine JSON-Fehlermeldung vorhanden.
-    }
-
-    throw new Error(message);
+      await updateDefaults();
+    } catch(e) {status(e.message,true);}
   }
-
-  if (response.status === 204) {
-    return null;
-  }
-
-  return response.json();
-}
-
-
-function populateWorkPlanningSelect(id, records, placeholder) {
-  const select = workPlanningElement(id);
-
-  if (!select) {
-    return;
-  }
-
-  const previousValue = select.value;
-
-  select.replaceChildren();
-
-  const placeholderOption = document.createElement("option");
-  placeholderOption.value = "";
-  placeholderOption.textContent = placeholder;
-  select.appendChild(placeholderOption);
-
-  for (const record of records) {
-    const option = document.createElement("option");
-
-    option.value = String(record.id);
-    option.textContent = record.name ?? String(record.id);
-
-    select.appendChild(option);
-  }
-
-  if (
-    previousValue &&
-    records.some(record => String(record.id) === previousValue)
-  ) {
-    select.value = previousValue;
-  }
-}
-
-
-/* ---------------------------------------------------------
- * Stammdaten
- * --------------------------------------------------------- */
-
-async function loadWorkPlanningOptions() {
-  const [fields, tractors, implementsList] = await Promise.all([
-    workPlanningRequest(WORK_PLANNING_API.fields),
-    workPlanningRequest(WORK_PLANNING_API.tractors),
-    workPlanningRequest(WORK_PLANNING_API.implements),
-  ]);
-
-  workPlanningState.fields = fields;
-  workPlanningState.tractors = tractors;
-  workPlanningState.implements = implementsList;
-
-  populateWorkPlanningSelect(
-    "work-planning-field",
-    fields,
-    "Feld auswählen",
-  );
-
-  populateWorkPlanningSelect(
-    "work-planning-tractor",
-    tractors,
-    "Traktor auswählen",
-  );
-
-  populateWorkPlanningSelect(
-    "work-planning-implement",
-    implementsList,
-    "Anbaugerät auswählen",
-  );
-}
-
-
-/* ---------------------------------------------------------
- * Formulardaten
- * --------------------------------------------------------- */
-
-function getWorkPlanningFormData() {
-  const name =
-    workPlanningElement("work-planning-name")?.value.trim();
-
-  const tractorId =
-    workPlanningElement("work-planning-tractor")?.value;
-
-  const implementId =
-    workPlanningElement("work-planning-implement")?.value;
-
-  const fieldId =
-    workPlanningElement("work-planning-field")?.value;
-
-  const turnType =
-    workPlanningElement("work-planning-turn-type")?.value;
-
-  const headlandMode =
-    workPlanningElement("work-planning-headland-mode")?.value;
-
-  const bedWorking = Boolean(
-    workPlanningElement("work-planning-bed-working")?.checked,
-  );
-
-  const speedInput =
-    workPlanningElement("work-planning-speed")?.value.trim();
-
-  const widthsInput =
-    workPlanningElement("work-planning-headland-widths")?.value.trim();
-
-  if (!name || !tractorId || !implementId || !fieldId) {
-    throw new Error(
-      "Bitte Bezeichnung, Traktor, Anbaugerät und Feld angeben.",
-    );
-  }
-
-  if (
-    !workPlanningState.selectedAlignmentBoundary ||
-    !workPlanningState.selectedStartBoundaryA ||
-    !workPlanningState.selectedStartBoundaryB
-  ) {
-    throw new Error(
-      "Bitte Ausrichtungskante und beide Startgrenzen auswählen.",
-    );
-  }
-
-  const payload = {
-    name,
-    tractor_id: Number(tractorId),
-    implement_id: Number(implementId),
-    field_id: Number(fieldId),
-    turn_type: turnType,
-    headland_mode: headlandMode,
-    bed_working: bedWorking,
-
-    alignment_boundary_id:
-      workPlanningState.selectedAlignmentBoundary.id,
-
-    start_boundary_a_id:
-      workPlanningState.selectedStartBoundaryA.id,
-
-    start_boundary_b_id:
-      workPlanningState.selectedStartBoundaryB.id,
-  };
-
-  if (speedInput !== "") {
-    payload.speed = Number(speedInput);
-  } else {
-    payload.speed = null;
-  }
-
-  if (widthsInput !== "") {
-    payload.headland_working_widths = Number(widthsInput);
-  }
-
-  if (workPlanningState.selectedStartPoint) {
-    payload.start_point = workPlanningState.selectedStartPoint;
-  }
-
-  return payload;
-}
-
-
-/* ---------------------------------------------------------
- * Vorschau und Speichern
- * --------------------------------------------------------- */
-
-async function previewWorkPlanning() {
-  try {
-    setWorkPlanningStatus("Fordere Planungsvorschau an …");
-
-    const payload = getWorkPlanningFormData();
-
-    const result = await workPlanningRequest(
-      WORK_PLANNING_API.preview,
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-    );
-
-    const widthsInput =
-      workPlanningElement("work-planning-headland-widths");
-
-    if (widthsInput) {
-      widthsInput.value = result.headland_working_widths ?? "";
-    }
-
-    renderWorkPlanningPreview(result);
-
-    setWorkPlanningStatus(
-      "Planungsvorschau vom Backend erhalten.",
-    );
-  } catch (error) {
-    setWorkPlanningStatus(error.message, true);
-  }
-}
-
-
-function renderWorkPlanningPreview(result) {
-  const container =
-    workPlanningElement("work-planning-preview-result");
-
-  if (!container) {
-    return;
-  }
-
-  container.replaceChildren();
-
-  const entries = [
-    ["Traktorlänge", result.tractor_length, "m"],
-    ["Anbaugerätelänge", result.implement_length, "m"],
-    ["Arbeitsbreite", result.working_width, "m"],
-    [
-      "Standard-Vorgewende",
-      result.default_headland_working_widths,
-      "Arbeitsbreiten",
-    ],
-    [
-      "Gewählte Arbeitsbreiten",
-      result.headland_working_widths,
-      "Arbeitsbreiten",
-    ],
-  ];
-
-  for (const [label, value, unit] of entries) {
-    if (value === undefined || value === null) {
-      continue;
-    }
-
-    const row = document.createElement("p");
-    const strong = document.createElement("strong");
-
-    strong.textContent = `${label}: `;
-    row.append(
-      strong,
-      document.createTextNode(`${value} ${unit}`),
-    );
-
-    container.appendChild(row);
-  }
-}
-
-
-async function saveWorkPlanning() {
-  try {
-    setWorkPlanningStatus("Speichere Arbeitsplanung …");
-
-    const payload = getWorkPlanningFormData();
-
-    const result = await workPlanningRequest(
-      WORK_PLANNING_API.save,
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-    );
-
-    setWorkPlanningStatus(
-      `Arbeitsplanung gespeichert. ID: ${result.id}; ` +
-      `Zeitpunkt: ${result.created_at}.`,
-    );
-
-    document.dispatchEvent(
-      new CustomEvent("pytrac:work-planning-saved", {
-        detail: result,
-      }),
-    );
-  } catch (error) {
-    setWorkPlanningStatus(error.message, true);
-  }
-}
-
-
-/* ---------------------------------------------------------
- * Kartenauswahl
- * --------------------------------------------------------- */
-
-function startWorkPlanningMapSelection(mode) {
-  if (
-    typeof fieldMap === "undefined" ||
-    !fieldMap ||
-    typeof fieldMap.on !== "function"
-  ) {
-    setWorkPlanningStatus(
-      "Die vorhandene Feldkarte ist nicht verfügbar.",
-      true,
-    );
-    return;
-  }
-
-  stopWorkPlanningMapSelection();
-
-  workPlanningState.selectionMode = mode;
-
-  const labels = {
-    start_point: "Startpunkt",
-    alignment: "Ausrichtungskante",
-    start_boundary_a: "erste Startgrenze",
-    start_boundary_b: "zweite Startgrenze",
-  };
-
-  setWorkPlanningStatus(
-    `Bitte ${labels[mode] ?? "Auswahl"} auf der Karte anklicken.`,
-  );
-
-  workPlanningState.mapClickHandler = async event => {
+  async function updateDefaults() {
+    const tractor=selected('tractor'), implement=selected('implement');
+    if(!tractor||!implement) {el('wp-default').textContent='–';return;}
     try {
-      if (!event?.latlng) {
-        throw new Error("Der Kartenklick enthält keine Koordinaten.");
+      const defaults=await api('/api/work-plannings/defaults',{method:'POST',body:JSON.stringify({tractor_id:+tractor,implement_id:+implement})});
+      state.defaults=defaults;el('wp-default').textContent=defaults.default_headland_working_widths;
+      if(!state.override) el('wp-widths').value=defaults.default_headland_working_widths;
+    } catch(e) {status(e.message,true);}
+  }
+  function resetMap() {
+    state.field=null;state.edges=[];state.selected={alignment:null,start:[]};
+    if(state.layers)state.layers.clearLayers();if(state.marker){state.map.removeLayer(state.marker);state.marker=null;}
+    updateSelection();
+  }
+  async function loadField() {
+    resetMap();if(!selected('field'))return;
+    try {
+      state.field=await api('/api/fields/'+selected('field'));
+      const coordinates=state.field.boundary;
+      if(!Array.isArray(coordinates)||coordinates.length<4)throw new Error('Ungültige Feldgeometrie.');
+      if(!state.map) {
+        state.map=L.map('wp-map').setView([51.3,9.5],13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(state.map);
+        state.layers=L.layerGroup().addTo(state.map);
       }
-
-      const fieldId =
-        workPlanningElement("work-planning-field")?.value;
-
-      if (!fieldId) {
-        throw new Error("Bitte zuerst ein Feld auswählen.");
-      }
-
-      /*
-       * Das Frontend übermittelt nur den Modus, die Feld-ID
-       * und die angeklickten Koordinaten.
-       *
-       * Das Backend identifiziert die Grenze beziehungsweise
-       * interpretiert den Startpunkt.
-       */
-      const result = await workPlanningRequest(
-        WORK_PLANNING_API.mapSelection,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            field_id: Number(fieldId),
-            selection_mode: mode,
-            coordinates: {
-              latitude: event.latlng.lat,
-              longitude: event.latlng.lng,
-            },
-          }),
-        },
-      );
-
-      applyWorkPlanningMapSelection(mode, result);
-
-      setWorkPlanningStatus(
-        result.message ?? "Kartenauswahl übernommen.",
-      );
-    } catch (error) {
-      setWorkPlanningStatus(error.message, true);
-    } finally {
-      stopWorkPlanningMapSelection();
+      const vertices=coordinates.slice(0,-1);
+      L.polygon(vertices.map(([lon,lat])=>[lat,lon]),{color:'#5b8d5a',weight:2,fillOpacity:0.12,interactive:false}).addTo(state.layers);
+      vertices.forEach((point,index)=>{
+        const next=vertices[(index+1)%vertices.length];
+        const edge=L.polyline([[point[1],point[0]],[next[1],next[0]]],{color:'#17643a',weight:8,opacity:0.75}).addTo(state.layers);
+        const id='edge-'+index;
+        edge.bindTooltip('Grenze '+(index+1));edge.on('click',()=>chooseEdge(id));
+        state.edges.push({id,edge});
+      });
+      state.map.fitBounds(L.latLngBounds(vertices.map(([lon,lat])=>[lat,lon])),{padding:[25,25]});
+      setTimeout(()=>state.map.invalidateSize(),50);
+    } catch(e) {status(e.message,true);}
+  }
+  function chooseEdge(id) {
+    if(state.mode==='alignment')state.selected.alignment=id;
+    else {
+      const start=state.selected.start;
+      if(start.includes(id))state.selected.start=start.filter(x=>x!==id);
+      else state.selected.start=[...start.slice(-1),id];
     }
-  };
-
-  fieldMap.on(
-    "click",
-    workPlanningState.mapClickHandler,
-  );
-}
-
-
-function stopWorkPlanningMapSelection() {
-  if (
-    workPlanningState.mapClickHandler &&
-    typeof fieldMap !== "undefined" &&
-    fieldMap
-  ) {
-    fieldMap.off(
-      "click",
-      workPlanningState.mapClickHandler,
-    );
+    updateSelection();
   }
-
-  workPlanningState.mapClickHandler = null;
-  workPlanningState.selectionMode = null;
-}
-
-
-function applyWorkPlanningMapSelection(mode, result) {
-  /*
-   * Die zurückgegebene Grenz-ID kommt vom Backend.
-   * Das Frontend berechnet oder interpretiert keine Geometrie.
-   */
-  switch (mode) {
-    case "start_point":
-      workPlanningState.selectedStartPoint =
-        result.start_point ?? result.coordinates;
-      break;
-
-    case "alignment":
-      workPlanningState.selectedAlignmentBoundary =
-        result.boundary;
-      break;
-
-    case "start_boundary_a":
-      workPlanningState.selectedStartBoundaryA =
-        result.boundary;
-      break;
-
-    case "start_boundary_b":
-      workPlanningState.selectedStartBoundaryB =
-        result.boundary;
-      break;
+  function updateSelection() {
+    for(const {id,edge} of state.edges) {
+      const color=id===state.selected.alignment?'#226cda':state.selected.start.includes(id)?'#e07820':'#17643a';
+      edge.setStyle({color});
+    }
+    el('wp-alignment-label').textContent=state.selected.alignment||'nicht ausgewählt';
+    el('wp-start-label').textContent=state.selected.start.join(' + ')||'nicht ausgewählt';
+    if(state.marker){state.map.removeLayer(state.marker);state.marker=null;}
+    el('wp-start-point').textContent='Noch nicht berechnet';
   }
-
-  document.dispatchEvent(
-    new CustomEvent("pytrac:work-planning-map-selection", {
-      detail: {
-        mode,
-        result,
-      },
-    }),
-  );
-}
-
-
-/* ---------------------------------------------------------
- * Benutzeroberfläche
- * --------------------------------------------------------- */
-
-function updateWorkPlanningOptions() {
-  const turnType =
-    workPlanningElement("work-planning-turn-type")?.value;
-
-  const container =
-    workPlanningElement("work-planning-bed-working-container");
-
-  const checkbox =
-    workPlanningElement("work-planning-bed-working");
-
-  const enabled = turnType === "u_turn";
-
-  if (container) {
-    container.hidden = !enabled;
+  function payload() {
+    if(!state.selected.alignment||state.selected.start.length!==2)throw new Error('Ausrichtungskante und zwei Startgrenzen auf der Karte auswählen.');
+    const speed=selected('speed').trim();const widths=selected('widths').trim();
+    return {name:selected('name').trim(),tractor_id:+selected('tractor'),implement_id:+selected('implement'),field_id:+selected('field'),
+      speed:speed===''?null:Number(speed),turn_type:selected('turn'),headland_mode:selected('headland'),bed_working:el('wp-bed').checked,
+      alignment_boundary_id:state.selected.alignment,start_boundary_a_id:state.selected.start[0],start_boundary_b_id:state.selected.start[1],
+      headland_working_widths:widths===''?null:Number(widths)};
   }
-
-  if (checkbox && !enabled) {
-    checkbox.checked = false;
+  async function preview() {
+    const result=await api('/api/work-plannings/preview',{method:'POST',body:JSON.stringify(payload())});
+    el('wp-default').textContent=result.default_headland_working_widths;
+    const [lon,lat]=result.start_point;
+    el('wp-start-point').textContent=`${lat.toFixed(7)}, ${lon.toFixed(7)}`;
+    if(state.marker)state.map.removeLayer(state.marker);
+    state.marker=L.marker([lat,lon]).addTo(state.map).bindPopup('Startpunkt der regulären Fahrspuren').openPopup();
+    return result;
   }
-}
-
-
-function initWorkPlanning() {
-  if (!workPlanningElement("work-planning-form")) {
-    return;
+  async function save() {
+    await preview();
+    const result=await api('/api/work-plannings',{method:'POST',body:JSON.stringify(payload())});
+    status(`Arbeitsplanung ${result.id} gespeichert: ${new Date(result.created_at).toLocaleString('de-DE')}`);
+    await load();
   }
-
-  workPlanningElement("work-planning-form")
-    .addEventListener("submit", event => {
-      event.preventDefault();
-      previewWorkPlanning();
+  function init() {
+    if(!el('wp-form'))return;
+    el('wp-tractor').addEventListener('change',()=>{state.override=false;updateDefaults();});
+    el('wp-implement').addEventListener('change',()=>{state.override=false;updateDefaults();});
+    el('wp-field').addEventListener('change',loadField);
+    el('wp-widths').addEventListener('input',()=>{state.override=el('wp-widths').value.trim()!=='';});
+    el('wp-reset-widths').addEventListener('click',()=>{state.override=false;updateDefaults();});
+    el('wp-turn').addEventListener('change',()=>{const u=selected('turn')==='u_turn';el('wp-bed').disabled=!u;if(!u)el('wp-bed').checked=false;});
+    for(const button of document.querySelectorAll('[data-wp-mode]'))button.addEventListener('click',()=>{
+      state.mode=button.dataset.wpMode;
+      document.querySelectorAll('[data-wp-mode]').forEach(b=>b.classList.toggle('active',b===button));
+      status(state.mode==='alignment'?'Ausrichtungskante anklicken.':'Zwei angrenzende Startgrenzen anklicken.');
     });
-
-  workPlanningElement("work-planning-save")
-    ?.addEventListener("click", saveWorkPlanning);
-
-  workPlanningElement("work-planning-preview")
-    ?.addEventListener("click", previewWorkPlanning);
-
-  workPlanningElement("work-planning-turn-type")
-    ?.addEventListener("change", updateWorkPlanningOptions);
-
-  const selectionButtons = {
-    "work-planning-select-start-point": "start_point",
-    "work-planning-select-alignment": "alignment",
-    "work-planning-select-start-boundary-a": "start_boundary_a",
-    "work-planning-select-start-boundary-b": "start_boundary_b",
-  };
-
-  for (const [elementId, mode] of Object.entries(selectionButtons)) {
-    workPlanningElement(elementId)?.addEventListener(
-      "click",
-      () => startWorkPlanningMapSelection(mode),
-    );
+    el('wp-preview').addEventListener('click',async()=>{try{await preview();status('Startpunkt vom Backend berechnet.');}catch(e){status(e.message,true);}});
+    el('wp-form').addEventListener('submit',async event=>{event.preventDefault();try{await save();}catch(e){status(e.message,true);}});
   }
-
-  workPlanningElement("work-planning-cancel-selection")
-    ?.addEventListener("click", stopWorkPlanningMapSelection);
-
-  workPlanningElement("work-planning-field")
-    ?.addEventListener("change", () => {
-      workPlanningState.selectedStartPoint = null;
-      workPlanningState.selectedAlignmentBoundary = null;
-      workPlanningState.selectedStartBoundaryA = null;
-      workPlanningState.selectedStartBoundaryB = null;
-    });
-
-  updateWorkPlanningOptions();
-
-  loadWorkPlanningOptions().catch(error => {
-    setWorkPlanningStatus(
-      `Stammdaten konnten nicht geladen werden: ${error.message}`,
-      true,
-    );
-  });
-}
-
-
-if (document.readyState === "loading") {
-  document.addEventListener(
-    "DOMContentLoaded",
-    initWorkPlanning,
-    { once: true },
-  );
-} else {
-  initWorkPlanning();
-}
+  return {init,load,show(){load();setTimeout(()=>{if(state.map)state.map.invalidateSize();},100);}};
+})();
+document.addEventListener('DOMContentLoaded',WP.init);
