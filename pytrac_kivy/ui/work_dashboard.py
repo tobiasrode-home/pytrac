@@ -5,6 +5,9 @@ Vorgewende bleibt beim Fahrer. GPS muss gültig sein.
 """
 import threading
 from pathlib import Path
+from kivy.app import App
+from pytrac_kivy.ui.gps_recording import GpsRecordingStore
+from pytrac_kivy.ui.stop_distance import stop_distance_text, signed_distance_to_stop
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.graphics import PushMatrix, PopMatrix, Rotate
@@ -71,7 +74,14 @@ class WorkDashboard(BoxLayout):
         self._popup_key=None
         self._dismissed_event=None
         self.recording=False
-        self.recorded_points=[]  # Nur im RAM, bis eine Backend-Sitzungs-API existiert.
+        self.recorded_points=[]  # Kompatibilitätszähler für aktuelle Sitzung
+        self._recorded_count=0
+        self._last_record_signature=None
+        app=App.get_running_app()
+        base=Path(app.user_data_dir) if app else Path.home()/'.pytrac'
+        self.gps_store=GpsRecordingStore(base/'gps_work_points.sqlite3')
+        self._popup_distance_label=None
+        self._popup_action=None
 
         body=BoxLayout(spacing=dp(8))
         self.add_widget(body)
@@ -149,6 +159,8 @@ class WorkDashboard(BoxLayout):
         self.steering_bar.update(None)
         self.recording=False
         self.recorded_points=[]
+        self._last_record_signature=None
+        self._recorded_count=self.gps_store.count(planning['id'])
         self._dismissed_event=None
         self._update_record_button()
         self.navigator=GuidanceNavigator(guidance,planning)
@@ -231,7 +243,7 @@ class WorkDashboard(BoxLayout):
         if self.recording:
             self.recording=False
             self._update_record_button()
-            self.message_label.text=f'Aufzeichnung pausiert · {len(self.recorded_points)} GPS-Punkte im Speicher'
+            self.message_label.text=f'Aufzeichnung pausiert · {self._recorded_count} GPS-Punkte dauerhaft gespeichert'
             return
         if not self.navigator.state.active:
             self.message_label.text='Zum Starten am Absenkpunkt Gerät bestätigen'
@@ -239,7 +251,7 @@ class WorkDashboard(BoxLayout):
             return
         self.recording=True
         self._update_record_button()
-        self.message_label.text='GPS-Aufzeichnung aktiv · nur im Arbeitsspeicher'
+        self.message_label.text='GPS-Aufzeichnung aktiv · lokale SQLite-Speicherung'
 
     def _show_event_popup(self,action,manual=False):
         if not self.navigator or self._popup is not None:
@@ -252,8 +264,14 @@ class WorkDashboard(BoxLayout):
             return
         title='Anbaugerät absenken' if action=='lower' else 'Anbaugerät ausheben'
         layout=BoxLayout(orientation='vertical',padding=dp(18),spacing=dp(16))
-        layout.add_widget(Label(text=title+'\nAnhalten, Gerät manuell bedienen und bestätigen.',
+        layout.add_widget(Label(text=title+'\\nAnhalten, Gerät manuell bedienen und bestätigen.',
                                 font_size='23sp',halign='center'))
+        self._popup_distance_label=Label(text='GPS-Abstand wird berechnet …',
+                                         font_size='29sp',bold=True,
+                                         size_hint_y=None,height=dp(65))
+        layout.add_widget(self._popup_distance_label)
+        self._popup_action=action
+        self._update_popup_distance()
         big=Button(text=('ABSENKEN BESTÄTIGEN' if action=='lower' else 'AUSHEBEN BESTÄTIGEN'),
                    size_hint_y=None,height=dp(135),font_size='27sp',bold=True,
                    background_normal='',background_color=GREEN)
@@ -267,6 +285,8 @@ class WorkDashboard(BoxLayout):
             self._dismissed_event=key
             popup.dismiss()
             self._popup=None
+            self._popup_distance_label=None
+            self._popup_action=None
         def do_confirm(*_):
             self.confirm(action)
             if self.navigator and ((action=='lower' and self.navigator.state.confirmed_lower)
@@ -276,6 +296,8 @@ class WorkDashboard(BoxLayout):
                 self._dismissed_event=None
                 popup.dismiss()
                 self._popup=None
+                self._popup_distance_label=None
+                self._popup_action=None
             else:
                 # Fehler bleibt im Dashboard sichtbar; Popup nicht als Bestätigung schließen.
                 self.message_label.text=self.message_label.text
@@ -283,17 +305,40 @@ class WorkDashboard(BoxLayout):
         cancel.bind(on_release=dismiss_later)
         popup.open()
 
+    def _update_popup_distance(self):
+        if self._popup_distance_label is None or not self.navigator:
+            return
+        fix=self.navigator.last_fix
+        if not fix or fix.get('event_action')!=self._popup_action:
+            self._popup_distance_label.text='GPS-Signal fehlt – bitte warten'
+            return
+        distance=fix.get('event_distance_m')
+        text=stop_distance_text(distance)
+        event=self.navigator.event(self._popup_action)
+        target=(event.get('vehicle_stop_coordinate') or event.get('coordinate')) if event else None
+        state=self._latest_state or {}
+        if target and state.get('latitude') is not None and state.get('longitude') is not None:
+            along=signed_distance_to_stop(
+                [state['longitude'],state['latitude']],target,
+                self.navigator.track.get('coordinates',[]))
+            if along is not None and along < -0.15:
+                text='Stopppunkt passiert · '+text.replace('Noch ','Abstand ')
+        if distance is not None and distance <= 0.30:
+            text='Stopppunkt erreicht · '+f'{distance*100:.0f} cm Abstand'
+        self._popup_distance_label.text=text
+
     def confirm(self,action):
         if not self.navigator:return
         data=self._latest_state or {}
         speed=data.get('speed_mps')
         stopped=(speed is not None and abs(float(speed))<=.15)
         try:
-            self.navigator.confirm(action,stopped=stopped)
+            self.navigator.confirm(action,stopped=stopped,distance_tolerance_m=0.35)
             self.message_label.text=('Absenken bestätigt · Gerät aktiv' if action=='lower'
                                      else 'Ausheben bestätigt · Spur abgeschlossen')
         except (ValueError,TypeError) as exc:
             self.message_label.text=str(exc)
+            self._update_popup_distance()
 
     def refresh(self):
         if self.busy:return
@@ -334,12 +379,24 @@ class WorkDashboard(BoxLayout):
             if heading is not None and data.get('imu_valid'):
                 self._marker.set_heading(heading)
         if valid and self.recording and self.navigator and self.navigator.state.active:
-            self.recorded_points.append({'latitude':float(lat),'longitude':float(lon),
-                                         'track_id':self.navigator.track['id'],
-                                         'phase':self.navigator.state.phase})
+            try:
+                # Sensor-Zeitstempel verhindert wiederholtes Speichern desselben Fixes.
+                signature=(data.get('timestamp'),float(lat),float(lon))
+                if signature!=self._last_record_signature:
+                    self.gps_store.add(
+                        self.navigator.planning['id'],self.navigator.state.phase,
+                        self.navigator.track['id'],lat,lon,
+                        speed_mps=speed,accuracy_m=data.get('gps_accuracy_m'))
+                    self._last_record_signature=signature
+                    self._recorded_count+=1
+            except Exception as exc:
+                self.recording=False
+                self._update_record_button()
+                self.message_label.text=f'GPS-Speicherfehler: {exc}'
         if self.navigator:
             fix=self.navigator.update(lon,lat,gps_valid=valid) if valid else self.navigator.update(0,0,gps_valid=False)
             if fix:
+                self._update_popup_distance()
                 signed=fix['signed_offset_m']
                 self.steering_bar.update(signed, reverse=self._driving_reverse(data))
                 self.offset_label.text=(f'Spurabweichung: {abs(signed):.2f} m '
@@ -354,6 +411,7 @@ class WorkDashboard(BoxLayout):
                 else:
                     self.action_label.text='Spur abgeschlossen · nächste Spur wählen'
             else:
+                self._update_popup_distance()
                 self.steering_bar.update(None)
                 self.offset_label.text='Spurabweichung: GPS fehlt'
                 self.remaining_label.text='Strecke: —'
