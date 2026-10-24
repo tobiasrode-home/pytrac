@@ -11,6 +11,7 @@ from kivy.graphics import PushMatrix, PopMatrix, Rotate
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.popup import Popup
 from kivy.uix.widget import Widget
 
 from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
@@ -61,21 +62,16 @@ class WorkDashboard(BoxLayout):
         self.abstract_map=True
         self._refresh_event=None
 
-        header=BoxLayout(size_hint_y=None,height=dp(52),spacing=dp(6))
-        header.add_widget(Label(text='[b]PyTrac · Ackernavi[/b]',markup=True,font_size='23sp'))
-        header.add_widget(self._button('Einstellungen',self.open_settings,145))
-        header.add_widget(self._button('Aktualisieren',self.refresh,135))
-        self.add_widget(header)
-        steering_row=BoxLayout(size_hint_y=None,height=dp(74))
-        steering_row.add_widget(Widget(size_hint_x=.25))
-        self.steering_bar=SteeringBar(size_hint_x=.5)
-        steering_row.add_widget(self.steering_bar)
-        steering_row.add_widget(Widget(size_hint_x=.25))
-        self.add_widget(steering_row)
+        # Die Lenkhilfe belegt die gesamte Displaybreite und steht ganz oben.
+        self.steering_bar=SteeringBar(size_hint_y=None,height=dp(86))
+        self.add_widget(self.steering_bar)
         self.selection_label=self._label('',height=34)
         self.add_widget(self.selection_label)
-        self.map_mode_button=self._button('Karte: Abstrakt',self.toggle_map_mode,155)
-        header.add_widget(self.map_mode_button)
+        self._popup=None
+        self._popup_key=None
+        self._dismissed_event=None
+        self.recording=False
+        self.recorded_points=[]  # Nur im RAM, bis eine Backend-Sitzungs-API existiert.
 
         body=BoxLayout(spacing=dp(8))
         self.add_widget(body)
@@ -105,19 +101,21 @@ class WorkDashboard(BoxLayout):
         for label in (self.order_label,self.track_label,self.offset_label,self.remaining_label,
                       self.action_label,self.gps_label,self.speed_label,self.message_label):
             panel.add_widget(label)
-        phase=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(5))
-        phase.add_widget(self._button('Hauptfeld',lambda:self.switch_phase('main')))
-        phase.add_widget(self._button('Vorgewende',lambda:self.switch_phase('headland')))
-        panel.add_widget(phase)
-        controls=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(5))
-        controls.add_widget(self._button('Vorige Spur',self.previous_track))
-        controls.add_widget(self._button('Nächste Spur',self.next_track))
-        panel.add_widget(controls)
-        actions=BoxLayout(size_hint_y=None,height=dp(52),spacing=dp(5))
-        actions.add_widget(self._button('Absenken bestätigen',lambda:self.confirm('lower')))
-        actions.add_widget(self._button('Ausheben bestätigen',lambda:self.confirm('raise')))
-        panel.add_widget(actions)
         panel.add_widget(Widget())
+        # Alle Bedienelemente in einer durchgehenden unteren Leiste.
+        footer=BoxLayout(size_hint_y=None,height=dp(60),spacing=dp(6))
+        self.add_widget(footer)
+        for title,callback in (
+            ('Einstellungen',self.open_settings),
+            ('Karte',self.toggle_map_mode),
+            ('Hauptfeld',lambda:self.switch_phase('main')),
+            ('Vorgewende',lambda:self.switch_phase('headland')),
+            ('Vorige Spur',self.previous_track),
+            ('Nächste Spur',self.next_track),
+        ):
+            footer.add_widget(self._button(title,callback))
+        self.record_button=self._button('Aufzeichnung starten',self.toggle_recording)
+        footer.add_widget(self.record_button)
         self.update_selection()
         self._refresh_event=Clock.schedule_interval(lambda _dt:self.refresh(),self.refresh_interval)
         Clock.schedule_once(lambda _dt:self.refresh(),0)
@@ -140,7 +138,6 @@ class WorkDashboard(BoxLayout):
 
     def toggle_map_mode(self):
         self.abstract_map=not self.abstract_map
-        self.map_mode_button.text='Karte: Abstrakt' if self.abstract_map else 'Karte: Normal'
         if self.field_overlay:
             self.field_overlay.set_abstract(self.abstract_map)
 
@@ -150,6 +147,10 @@ class WorkDashboard(BoxLayout):
 
     def _loaded(self,planning,guidance,objects):
         self.steering_bar.update(None)
+        self.recording=False
+        self.recorded_points=[]
+        self._dismissed_event=None
+        self._update_record_button()
         self.navigator=GuidanceNavigator(guidance,planning)
         self.selection.update(objects)
         self.selection_changed()
@@ -191,6 +192,7 @@ class WorkDashboard(BoxLayout):
         if not self.navigator:return
         try:
             self.navigator.select(phase)
+            self._dismissed_event=None
             self._update_track_display()
             self.message_label.text='Phase gewechselt · Gerät vor Beginn prüfen'
         except ValueError as exc:
@@ -203,7 +205,9 @@ class WorkDashboard(BoxLayout):
                 self.message_label.text='Letzte Spur dieser Phase erreicht'
             else:
                 self.message_label.text='Zur nächsten Spur rangieren · Gerät ausgehoben'
-                self._update_track_display()
+                self._dismissed_event=None
+                self._dismissed_event=None
+            self._update_track_display()
         except ValueError as exc:self.message_label.text=str(exc)
 
     def previous_track(self):
@@ -211,8 +215,73 @@ class WorkDashboard(BoxLayout):
         try:
             index=max(0,self.navigator.state.track_index-1)
             self.navigator.select(self.navigator.state.phase,index)
+            self._dismissed_event=None
             self._update_track_display()
         except ValueError as exc:self.message_label.text=str(exc)
+
+    def _update_record_button(self):
+        self.record_button.text=('Aufzeichnung pausieren' if self.recording
+                                 else 'Aufzeichnung starten')
+
+    def toggle_recording(self):
+        """Aufzeichnung in der UI aktivieren/pausieren; keine Datenpersistenz."""
+        if not self.navigator:
+            self.message_label.text='Zuerst einen Arbeitsauftrag laden'
+            return
+        if self.recording:
+            self.recording=False
+            self._update_record_button()
+            self.message_label.text=f'Aufzeichnung pausiert · {len(self.recorded_points)} GPS-Punkte im Speicher'
+            return
+        if not self.navigator.state.active:
+            self.message_label.text='Zum Starten am Absenkpunkt Gerät bestätigen'
+            self._show_event_popup('lower',manual=True)
+            return
+        self.recording=True
+        self._update_record_button()
+        self.message_label.text='GPS-Aufzeichnung aktiv · nur im Arbeitsspeicher'
+
+    def _show_event_popup(self,action,manual=False):
+        if not self.navigator or self._popup is not None:
+            return
+        fix=self.navigator.last_fix
+        key=(self.navigator.state.phase,self.navigator.state.track_index,action)
+        if not manual and (key==self._dismissed_event or not fix or
+                           fix.get('event_distance_m') is None or
+                           fix['event_distance_m']>3.0):
+            return
+        title='Anbaugerät absenken' if action=='lower' else 'Anbaugerät ausheben'
+        layout=BoxLayout(orientation='vertical',padding=dp(18),spacing=dp(16))
+        layout.add_widget(Label(text=title+'\nAnhalten, Gerät manuell bedienen und bestätigen.',
+                                font_size='23sp',halign='center'))
+        big=Button(text=('ABSENKEN BESTÄTIGEN' if action=='lower' else 'AUSHEBEN BESTÄTIGEN'),
+                   size_hint_y=None,height=dp(135),font_size='27sp',bold=True,
+                   background_normal='',background_color=GREEN)
+        layout.add_widget(big)
+        cancel=Button(text='Später',size_hint_y=None,height=dp(52))
+        layout.add_widget(cancel)
+        popup=Popup(title='Geräte-Stopp',content=layout,size_hint=(.82,.78),
+                    auto_dismiss=False)
+        self._popup=popup
+        def dismiss_later(*_):
+            self._dismissed_event=key
+            popup.dismiss()
+            self._popup=None
+        def do_confirm(*_):
+            self.confirm(action)
+            if self.navigator and ((action=='lower' and self.navigator.state.confirmed_lower)
+                                   or (action=='raise' and self.navigator.state.confirmed_raise)):
+                self.recording=(action=='lower')
+                self._update_record_button()
+                self._dismissed_event=None
+                popup.dismiss()
+                self._popup=None
+            else:
+                # Fehler bleibt im Dashboard sichtbar; Popup nicht als Bestätigung schließen.
+                self.message_label.text=self.message_label.text
+        big.bind(on_release=do_confirm)
+        cancel.bind(on_release=dismiss_later)
+        popup.open()
 
     def confirm(self,action):
         if not self.navigator:return
@@ -264,6 +333,10 @@ class WorkDashboard(BoxLayout):
             heading=data.get('heading_deg')
             if heading is not None and data.get('imu_valid'):
                 self._marker.set_heading(heading)
+        if valid and self.recording and self.navigator and self.navigator.state.active:
+            self.recorded_points.append({'latitude':float(lat),'longitude':float(lon),
+                                         'track_id':self.navigator.track['id'],
+                                         'phase':self.navigator.state.phase})
         if self.navigator:
             fix=self.navigator.update(lon,lat,gps_valid=valid) if valid else self.navigator.update(0,0,gps_valid=False)
             if fix:
@@ -273,6 +346,8 @@ class WorkDashboard(BoxLayout):
                                         + ('links' if signed>0 else 'rechts' if signed<0 else 'mittig'))
                 self.remaining_label.text=f"Bis Spurende: {fix['remaining_m']:.1f} m"
                 action=fix['event_action']
+                if action and fix.get('event_distance_m') is not None and fix['event_distance_m']<=3.0:
+                    self._show_event_popup(action)
                 if action:
                     self.action_label.text=(('Absenken' if action=='lower' else 'Ausheben')
                                             + f" · Stopppunkt {fix['event_distance_m']:.1f} m")
