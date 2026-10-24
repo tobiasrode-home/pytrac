@@ -153,7 +153,7 @@ const MP=(()=>{
    if(!st.field)throw Error('Bitte zuerst ein Feld wählen.');
    const back=selectedReference('mp-ref-back'),side=selectedReference('mp-ref-side'),front=selectedReference('mp-ref-front');
    const backD=inputMeter('mp-ref-back-distance'),sideD=inputMeter('mp-ref-side-distance',true),frontD=inputMeter('mp-ref-front-distance');
-   if(side.key.startsWith('track:')&&Number(side.key.split(':')[1])===st.selected)throw Error('Bitte nicht die gerade ausgewählte Spur als eigene seitliche Referenz verwenden.');
+   // Auch die ausgewählte Spur darf als Vorlage für eine neue Spur dienen.
    // Kantenfolge der Seitenreferenz bleibt erhalten. Eine ausreichend lange
    // Tangentenverlängerung erlaubt Schnitte mit Stirngrenzen auch jenseits der Eckpunkte.
    let path=sideD===0?side.points.map(p=>[...p]):offset(side.points,sideD);
