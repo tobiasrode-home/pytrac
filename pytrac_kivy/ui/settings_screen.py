@@ -55,8 +55,29 @@ class SettingsScreen(BoxLayout):
             self.add_widget(button)
         self.status_label=Label(text='Lade Auswahlmöglichkeiten …',size_hint_y=None,height=dp(32))
         self.add_widget(self.status_label)
-        # Freier Raum wächst mit der Displayhöhe: Helligkeit bleibt unten.
+        # Freier Raum wächst mit der Displayhöhe. Navigationseinstellungen
+        # sitzen direkt über der Helligkeit am unteren Displayrand.
         self.add_widget(BoxLayout(size_hint_y=1))
+        self._loading_nav_settings=True
+        self.add_widget(Label(text="GPS und IMU",size_hint_y=None,height=dp(26),
+                              bold=True,font_size="18sp"))
+        nav_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
+        nav_row.add_widget(Label(text="GPS glätten",size_hint_x=.25))
+        self.smoothing_switch=Switch(active=False,size_hint_x=.12)
+        self.smoothing_switch.bind(active=self._smoothing_changed)
+        nav_row.add_widget(self.smoothing_switch)
+        nav_row.add_widget(Label(text="IMU-Offset (°)",size_hint_x=.27))
+        self.heading_offset_input=TextInput(text="0",multiline=False,
+                                            input_filter=None,size_hint_x=.16)
+        bind_fullscreen_keyboard(self.heading_offset_input,"IMU-Offset in Grad (-180 bis +180)")
+        nav_row.add_widget(self.heading_offset_input)
+        self.add_widget(nav_row)
+        self.add_widget(self.make_button("GPS-/IMU-Einstellungen speichern",
+                                         lambda *_:self.save_navigation_settings(),
+                                         height=dp(44)))
+        self.add_widget(BoxLayout(size_hint_y=None,height=dp(12)))
+        self._loading_nav_settings=False
+        self.load_navigation_settings()
         brightness=read_brightness()
         brightness_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
         brightness_row.add_widget(Label(text="Displayhelligkeit",size_hint_x=None,width=dp(160)))
