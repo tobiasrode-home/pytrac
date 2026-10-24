@@ -54,8 +54,8 @@ class SettingsScreen(BoxLayout):
             self.selection_buttons[kind]=button
             self.add_widget(button)
         self.status_label=Label(text='',size_hint_y=None,height=0)
-        self.status_label.bind(text=lambda widget,value:setattr(widget,'height',dp(32) if value else 0))
-        self.add_widget(self.status_label)
+        # Status intern behalten, aber keine permanente Statuszeile anzeigen.
+        # Ladefehler werden protokolliert statt Platz auf dem Display zu belegen.
         # Freier Raum wächst mit der Displayhöhe. Navigationseinstellungen
         # sitzen direkt über der Helligkeit am unteren Displayrand.
         self.add_widget(BoxLayout(size_hint_y=1))
@@ -171,7 +171,8 @@ class SettingsScreen(BoxLayout):
                          [('tractor','tractors'),('implement','implements'),('field','fields')]}
                 Clock.schedule_once(lambda _dt:self.set_choices(choices))
             except Exception as exc:
-                Clock.schedule_once(lambda _dt,msg=str(exc):setattr(self.status_label,'text','Laden fehlgeschlagen: '+msg))
+                import logging
+                logging.getLogger(__name__).warning('Auswahlmöglichkeiten konnten nicht geladen werden: %s',exc)
         threading.Thread(target=worker,daemon=True).start()
     def set_choices(self,choices):
         self.choices=choices
