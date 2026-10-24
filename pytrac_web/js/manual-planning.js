@@ -103,19 +103,100 @@ const MP=(()=>{
      L.marker(middle,{interactive:false,icon:L.divIcon({className:'mp-edge-label',html:`<span>${meters(a,b).toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1})} m</span>`,iconSize:[88,24],iconAnchor:[44,12]})}).addTo(st.edgeLabels);
    }
  }
+
+ function referenceItems(){
+   if(!st.field)return [];
+   const ring=st.field.boundary;
+   const n=ring.length>2&&meters(ring[0],ring[ring.length-1])<.05?ring.length-1:ring.length;
+   const items=[];
+   for(let i=0;i<n;i++)items.push({key:`edge:${i}`,label:`Feldgrenze ${i+1} (${meters(ring[i],ring[(i+1)%n]).toFixed(1)} m)`,points:[ring[i],ring[(i+1)%n]]});
+   st.tracks.forEach((track,i)=>items.push({key:`track:${i}`,label:`Spur ${i+1} (${trackLength(track).toFixed(1)} m)`,points:track}));
+   return items;
+ }
+ function refreshReferences(){
+   const items=referenceItems();
+   for(const id of ['mp-end-reference','mp-ref-back','mp-ref-side','mp-ref-front']){
+     const el=$(id);if(!el)continue;const old=el.value;
+     el.replaceChildren(new Option('Bezugslinie auswählen',''));
+     items.forEach(item=>el.add(new Option(item.label,item.key)));
+     if(items.some(x=>x.key===old))el.value=old;
+   }
+ }
+ function selectedReference(id){const item=referenceItems().find(x=>x.key===$(id).value);if(!item)throw Error('Bitte bei '+id+' eine Feldgrenze oder Spur auswählen.');return item}
+ function inputMeter(id,signed=false){const raw=$(id).value.trim().replace(',','.');const val=Number(raw);if(!raw||!Number.isFinite(val)||(!signed&&val<0))throw Error('Ungültiger Meterwert bei '+id);return val}
+ function lineHits(a,d,reference){
+   const pts=reference.map(project),hits=[];
+   for(let i=0;i<pts.length-1;i++){
+     const p=pts[i],q=pts[i+1],v=[q[0]-p[0],q[1]-p[1]];
+     const den=cross2(d,v);if(Math.abs(den)<1e-9)continue;
+     const delta=[p[0]-a[0],p[1]-a[1]];
+     const t=cross2(delta,v)/den,u=cross2(delta,d)/den;
+     if(u>=-1e-7&&u<=1+1e-7)hits.push({t,point:[a[0]+t*d[0],a[1]+t*d[1]]});
+   }
+   return hits;
+ }
+ function intersectEndpoint(track,ref,inset,atStart){
+   const seq=(atStart?track:[...track].reverse()).map(project);
+   // Vom Ende nach außen verlängern und den nächsten gültigen Schnitt wählen.
+   const a=seq[0],b=seq[1],v=[a[0]-b[0],a[1]-b[1]],len=Math.hypot(...v);
+   if(len<.001)throw Error('Endabschnitt hat keine Richtung.');
+   const d=[v[0]/len,v[1]/len];
+   const hits=lineHits(a,d,ref.points).filter(h=>h.t>=-0.05).sort((x,y)=>x.t-y.t);
+   if(!hits.length)throw Error('Keine Schnittstelle zur ausgewählten '+(atStart?'hinteren':'vorderen')+' Bezugslinie in Verlängerung der Spur.');
+   const move=hits[0].t-inset;
+   if(move<=-len+0.05)throw Error('Der Innenabstand überschreitet den ersten Spurabschnitt.');
+   const point=unproject([a[0]+move*d[0],a[1]+move*d[1]]);
+   const out=track.map(p=>[...p]);out[atStart?0:out.length-1]=point;
+   return out;
+ }
+ function constructThree(){
+   if(!st.field)throw Error('Bitte zuerst ein Feld wählen.');
+   const back=selectedReference('mp-ref-back'),side=selectedReference('mp-ref-side'),front=selectedReference('mp-ref-front');
+   const backD=inputMeter('mp-ref-back-distance'),sideD=inputMeter('mp-ref-side-distance',true),frontD=inputMeter('mp-ref-front-distance');
+   if(side.key.startsWith('track:')&&Number(side.key.split(':')[1])===st.selected)throw Error('Bitte nicht die gerade ausgewählte Spur als eigene seitliche Referenz verwenden.');
+   // Kantenfolge der Seitenreferenz bleibt erhalten. Eine ausreichend lange
+   // Tangentenverlängerung erlaubt Schnitte mit Stirngrenzen auch jenseits der Eckpunkte.
+   let path=sideD===0?side.points.map(p=>[...p]):offset(side.points,sideD);
+   if(path.length<2)throw Error('Die seitliche Bezugslinie ist zu kurz.');
+   const p=path.map(project),start=p[0],next=p[1],end=p[p.length-1],prev=p[p.length-2];
+   const extend=(a,b)=>{const dx=a[0]-b[0],dy=a[1]-b[1],len=Math.hypot(dx,dy);if(len<.01)throw Error('Doppelte Stützpunkte in der Bezugslinie.');return unproject([a[0]+dx/len*10000,a[1]+dy/len*10000])};
+   path=[extend(start,next),...path,extend(end,prev)];
+   // Schnittpunkte mit Querlinien auf allen Segmenten suchen; nach der
+   // Reihenfolge entlang der Spur zuschneiden.
+   const metric=path.map(project),cum=[0];for(let i=1;i<metric.length;i++)cum.push(cum[i-1]+Math.hypot(metric[i][0]-metric[i-1][0],metric[i][1]-metric[i-1][1]));
+   const crossings=ref=>{const result=[];for(let i=0;i<metric.length-1;i++){
+     const a=metric[i],b=metric[i+1],d=[b[0]-a[0],b[1]-a[1]];
+     for(const hit of lineHits(a,d,ref.points))if(hit.t>=-1e-7&&hit.t<=1+1e-7)result.push({s:cum[i]+Math.max(0,hit.t)*Math.hypot(...d),point:hit.point});
+   }return result};
+   const backs=crossings(back),fronts=crossings(front);
+   if(!backs.length||!fronts.length)throw Error('Die seitliche Spur schneidet nicht beide gewählten Querlinien. Bitte Referenzen oder Seitenabstand ändern.');
+   // Die kürzeste positive Strecke zwischen hinten und vorne wählen.
+   let pair=null;
+   for(const b of backs)for(const f of fronts){const dist=f.s-b.s;if(dist>Math.max(0.2,backD+frontD+0.1)&&(!pair||dist<pair.dist))pair={b,f,dist,reverse:false};}
+   if(!pair)for(const b of backs)for(const f of fronts){const dist=b.s-f.s;if(dist>Math.max(0.2,backD+frontD+0.1)&&(!pair||dist<pair.dist))pair={b:f,f:b,dist,reverse:true};}
+   if(!pair)throw Error('Querlinien sind zu dicht beieinander oder in ungeeigneter Reihenfolge.');
+   const at=(s)=>{for(let i=0;i<cum.length-1;i++)if(s<=cum[i+1]+1e-7){const t=Math.max(0,Math.min(1,(s-cum[i])/(cum[i+1]-cum[i]||1)));return unproject([metric[i][0]+(metric[i+1][0]-metric[i][0])*t,metric[i][1]+(metric[i+1][1]-metric[i][1])*t])}return path[path.length-1]};
+   const from=pair.b.s+backD,to=pair.f.s-frontD;
+   if(to-from<0.5)throw Error('Nach Abzug des Vorgewendes bleibt keine ausreichende Spurlänge.');
+   const newTrack=[at(from)];for(let i=1;i<cum.length-1;i++)if(cum[i]>from+1e-6&&cum[i]<to-1e-6)newTrack.push(path[i]);newTrack.push(at(to));
+   if(pair.reverse)newTrack.reverse();
+   if(newTrack.length<2||trackLength(newTrack)<1)throw Error('Spur wäre zu kurz.');
+   history();st.tracks.push(newTrack);st.selected=st.tracks.length-1;render();msg(`Spur ${st.selected+1} aus drei Bezugslinien erstellt (${trackLength(newTrack).toFixed(2)} m). Bitte Grenzabstand und Arbeitsbreite prüfen.`);
+ }
+
  function history(){st.history.push(JSON.stringify(st.tracks));if(st.history.length>50)st.history.shift();st.dirty=true}
  function pointInside(p){const poly=st.field.boundary;let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])inside=!inside}return inside}
  function distanceSegment(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy||1)));return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy)}
  function warnings(){if(!st.field)return '';const boundary=st.field.boundary.map(project);let center=0,band=0;for(const t of st.tracks){for(let j=0;j<t.length-1;j++){const a=project(t[j]),b=project(t[j+1]),steps=Math.max(2,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/2));for(let k=0;k<=steps;k++){const p=[a[0]+(b[0]-a[0])*k/steps,a[1]+(b[1]-a[1])*k/steps],geo=unproject(p);if(!pointInside(geo))center++;let d=Infinity;for(let h=0;h<boundary.length-1;h++)d=Math.min(d,distanceSegment(p,boundary[h],boundary[h+1]));if(d<width()/2)band++}}}return center?`⚠ ${center} Prüfpunkte der Spurmitte liegen außerhalb des Feldes.`:band?`⚠ Arbeitsbreite kann an der Feldgrenze überstehen (${band} Prüfpunkte).`:'Spurmitten und Arbeitsbreite bei Stichproben innerhalb der Feldgrenze.'}
- function render(){if(!st.map)return;st.layers.clearLayers();st.markers.clearLayers();st.bands.clearLayers();const w=width();st.tracks.forEach((t,i)=>{const path=t.map(latlng);if($('mp-bands').checked){for(let k=0;k<t.length-1;k++){const a=project(t[k]),b=project(t[k+1]),dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);if(len<.001)continue;const nx=-dy/len*w/2,ny=dx/len*w/2;L.polygon([[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(v=>latlng(unproject(v))),{stroke:false,fillColor:'#418fe4',fillOpacity:.18,interactive:false}).addTo(st.bands)}}const line=L.polyline(path,{color:i===st.selected?'#ed8a20':'#2478e4',weight:i===st.selected?5:3}).addTo(st.layers);line.on('click',e=>{if(st.mode==='draw')return;L.DomEvent.stopPropagation(e);st.selected=i;render()});if(i===st.selected&&st.mode==='select')t.forEach((p,j)=>{const m=L.marker(latlng(p),{draggable:true}).addTo(st.markers);m.on('dragstart',history);m.on('dragend',()=>{const q=m.getLatLng();st.tracks[i][j]=[q.lng,q.lat];render()});m.on('contextmenu',()=>{if(t.length>2){history();t.splice(j,1);render()}})})});if(st.drawing.length)L.polyline(st.drawing.map(latlng),{color:'#ec8d22',weight:4,dashArray:'5 5'}).addTo(st.layers);const list=$('mp-list');list.replaceChildren();st.tracks.forEach((t,i)=>{const b=document.createElement('button');b.type='button';b.textContent=`Spur ${i+1} · ${trackLength(t).toFixed(2).replace(".",",")} m`;if(i===st.selected)b.classList.add('active');b.onclick=()=>{st.selected=i;st.mode='select';render()};list.append(b)});$('mp-selection').textContent=st.selected<0?'Keine Spur ausgewählt':`Spur ${st.selected+1} · ${st.tracks[st.selected].length} Stützpunkte · ${trackLength(st.tracks[st.selected]).toFixed(2).replace('.',',')} m`;$('mp-length').value=st.selected<0?'':trackLength(st.tracks[st.selected]).toFixed(2);const warning=warnings();$('mp-coverage').textContent=warning;$('mp-coverage').style.color=warning.startsWith('⚠')?'#b42318':'';}
+ function render(){if(!st.map)return;st.layers.clearLayers();st.markers.clearLayers();st.bands.clearLayers();const w=width();st.tracks.forEach((t,i)=>{const path=t.map(latlng);if($('mp-bands').checked){for(let k=0;k<t.length-1;k++){const a=project(t[k]),b=project(t[k+1]),dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);if(len<.001)continue;const nx=-dy/len*w/2,ny=dx/len*w/2;L.polygon([[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(v=>latlng(unproject(v))),{stroke:false,fillColor:'#418fe4',fillOpacity:.18,interactive:false}).addTo(st.bands)}}const line=L.polyline(path,{color:i===st.selected?'#ed8a20':'#2478e4',weight:i===st.selected?5:3}).addTo(st.layers);line.on('click',e=>{if(st.mode==='draw')return;L.DomEvent.stopPropagation(e);st.selected=i;render()});if(i===st.selected&&st.mode==='select')t.forEach((p,j)=>{const m=L.marker(latlng(p),{draggable:true}).addTo(st.markers);m.on('dragstart',history);m.on('dragend',()=>{const q=m.getLatLng();st.tracks[i][j]=[q.lng,q.lat];render()});m.on('contextmenu',()=>{if(t.length>2){history();t.splice(j,1);render()}})})});if(st.drawing.length)L.polyline(st.drawing.map(latlng),{color:'#ec8d22',weight:4,dashArray:'5 5'}).addTo(st.layers);const list=$('mp-list');list.replaceChildren();st.tracks.forEach((t,i)=>{const b=document.createElement('button');b.type='button';b.textContent=`Spur ${i+1} · ${trackLength(t).toFixed(2).replace(".",",")} m`;if(i===st.selected)b.classList.add('active');b.onclick=()=>{st.selected=i;st.mode='select';render()};list.append(b)});$('mp-selection').textContent=st.selected<0?'Keine Spur ausgewählt':`Spur ${st.selected+1} · ${st.tracks[st.selected].length} Stützpunkte · ${trackLength(st.tracks[st.selected]).toFixed(2).replace('.',',')} m`;$('mp-length').value=st.selected<0?'':trackLength(st.tracks[st.selected]).toFixed(2);refreshReferences();const warning=warnings();$('mp-coverage').textContent=warning;$('mp-coverage').style.color=warning.startsWith('⚠')?'#b42318':'';}
  async function loadField(){if(st.dirty&&!confirm('Ungespeicherte Spuren verwerfen?'))return;st.field=null;st.tracks=[];st.selected=-1;st.id=null;st.dirty=false;st.drawing=[];if(st.layers)st.layers.clearLayers();if(st.markers)st.markers.clearLayers();if(st.bands)st.bands.clearLayers();if(st.fieldLayer)st.map.removeLayer(st.fieldLayer);if(st.edgeLabels)st.edgeLabels.clearLayers();if(!$('mp-field').value)return;st.field=await api('/api/fields/'+$('mp-field').value);st.fieldLayer=L.polygon(st.field.boundary.map(latlng),{color:'#2e8755',weight:3,fillOpacity:.08}).addTo(st.map);st.map.fitBounds(st.fieldLayer.getBounds(),{padding:[30,30]});showBoundaryLengths();render()}
  function finish(){if(st.drawing.length>=2){history();st.tracks.push(st.drawing);st.selected=st.tracks.length-1;msg('Spur angelegt. Jetzt präzise bearbeiten oder speichern.')}else if(st.drawing.length)msg('Mindestens zwei Punkte setzen.',true);st.drawing=[];st.mode='select';render()}
  async function save(){if(st.mode==='draw')finish();if(!st.field||!$('mp-name').value.trim()||!$('mp-tractor').value||!$('mp-implement').value)throw Error('Name, Feld, Traktor und Anbaugerät auswählen.');if(!st.tracks.length)throw Error('Mindestens eine Spur zeichnen.');const body={name:$('mp-name').value.trim(),field_id:+$('mp-field').value,tractor_id:+$('mp-tractor').value,implement_id:+$('mp-implement').value,tracks:st.tracks};let result;if(st.id){result=await api(`/api/work-plannings/${st.id}/manual-tracks`,{method:'PUT',body:JSON.stringify({tracks:st.tracks})})}else{result=await api('/api/work-plannings/manual',{method:'POST',body:JSON.stringify(body)});st.id=result.id}st.dirty=false;msg(`${st.tracks.length} Fahrspuren gespeichert (Arbeitsauftrag ${st.id}). GPS-Führung verwendet diese Spuren.`);await load()}
  async function openPlan(plan){if(st.dirty&&!confirm('Ungespeicherte Spuren verwerfen?'))return;const manual=await api(`/api/work-plannings/${plan.id}/manual-tracks`);if(!manual.tracks.length){msg('Dieser ältere Auftrag hat keine manuell gespeicherten Spuren.',true);return}$('mp-name').value=plan.name;$('mp-tractor').value=plan.tractor_id;$('mp-implement').value=plan.implement_id;$('mp-field').value=plan.field_id;st.dirty=false;await loadField();st.tracks=manual.tracks;st.id=plan.id;st.selected=0;st.dirty=false;render();msg(`Arbeitsauftrag ${plan.id} mit ${st.tracks.length} manuellen Spuren geladen.`)}
  function init(){const bind=(id,fn)=>$(id).addEventListener('click',()=>{try{const r=fn();if(r?.catch)r.catch(e=>msg(e.message,true))}catch(e){msg(e.message,true)}});bind('mp-refresh',load);bind('mp-select',()=>{st.mode='select';st.drawing=[];render()});bind('mp-draw',()=>{st.mode='draw';st.drawing=[];msg('Auf die Karte klicken; mit „Zeichnung abschließen“ beenden.')});bind('mp-finish',finish);bind('mp-undo',()=>{if(st.history.length){st.tracks=JSON.parse(st.history.pop());st.selected=-1;st.dirty=true;render()}});bind('mp-delete',()=>{if(st.selected>=0){history();st.tracks.splice(st.selected,1);st.selected=-1;render()}});bind('mp-apply-shift',()=>{if(st.selected<0)throw Error('Spur auswählen.');const m=Number($('mp-shift').value);if(!Number.isFinite(m))throw Error('Ungültiger Meterwert.');const t=offset(st.tracks[st.selected],m);history();st.tracks[st.selected]=t;render()});bind('mp-add-parallel',()=>{if(st.selected<0)throw Error('Spur auswählen.');const m=Number($('mp-parallel').value);if(!Number.isFinite(m)||m===0)throw Error('Abstand muss ungleich null sein.');const t=offset(st.tracks[st.selected],m);history();st.tracks.push(t);st.selected=st.tracks.length-1;render()});bind('mp-apply-length',()=>{if(st.selected<0)throw Error('Bitte zuerst eine Spur auswählen.');const raw=$('mp-length').value;const target=Number(raw);if(!raw.trim()||!Number.isFinite(target))throw Error('Bitte eine Länge in Metern eingeben.');const updated=setLength(st.tracks[st.selected],target);history();st.tracks[st.selected]=updated;render();msg(`Spurlänge auf ${trackLength(updated).toFixed(2)} m angepasst. Bitte Feldgrenze prüfen.`)});bind('mp-apply-trim-start',()=>{if(st.selected<0)throw Error('Spur auswählen.');const v=Number($('mp-trim-start').value);const t=trimTrack(st.tracks[st.selected],v,true);history();st.tracks[st.selected]=t;render();msg(`Spuranfang um ${v.toFixed(2)} m gekürzt.`)});
  bind('mp-apply-trim-end',()=>{if(st.selected<0)throw Error('Spur auswählen.');const v=Number($('mp-trim-end').value);const t=trimTrack(st.tracks[st.selected],v,false);history();st.tracks[st.selected]=t;render();msg(`Spurende um ${v.toFixed(2)} m gekürzt.`)});
- const snap=(atStart)=>{if(st.selected<0)throw Error('Spur auswählen.');const d=Number($('mp-edge-distance').value);const result=snapEndToBoundary(st.tracks[st.selected],atStart,d);history();st.tracks[st.selected]=result.track;render();msg(`${atStart?'Spuranfang':'Spurende'} an Feldkante ${result.edge+1} ausgerichtet (${d.toFixed(2)} m Innenabstand).`);};
+ const snap=(atStart)=>{if(st.selected<0)throw Error('Spur auswählen.');const d=inputMeter('mp-edge-distance');const ref=selectedReference('mp-end-reference');const updated=intersectEndpoint(st.tracks[st.selected],ref,d,atStart);history();st.tracks[st.selected]=updated;render();msg(`${atStart?'Spuranfang':'Spurende'} an ${ref.label} ausgerichtet (${d.toFixed(2)} m Innenabstand).`);};
  bind('mp-snap-start',()=>snap(true));bind('mp-snap-end',()=>snap(false));
- bind('mp-save',save);$('mp-field').onchange=()=>loadField().catch(e=>msg(e.message,true));$('mp-implement').onchange=render;$('mp-bands').onchange=render;}
+ bind('mp-construct',constructThree);bind('mp-save',save);$('mp-field').onchange=()=>loadField().catch(e=>msg(e.message,true));$('mp-implement').onchange=render;$('mp-bands').onchange=render;}
  document.addEventListener('DOMContentLoaded',init);return {show,load};
 })();
