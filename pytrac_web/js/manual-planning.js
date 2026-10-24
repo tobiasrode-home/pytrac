@@ -27,6 +27,73 @@ const MP=(()=>{
    let d=remain;for(let i=0;i<5;i++){const p=unproject([a[0]+dx/len*d,a[1]+dy/len*d]);const actual=meters(track[track.length-2],p);if(actual>0)d*=remain/actual}
    return [...track.slice(0,-1),unproject([a[0]+dx/len*d,a[1]+dy/len*d])];
  }
+
+ // Entfernt eine gewünschte Länge entlang der gesamten Polylinie, nicht nur
+ // entlang des ersten bzw. letzten Teilstücks.
+ function trimTrack(track,amount,fromStart){
+   if(!Number.isFinite(amount)||amount<0)throw Error('Bitte eine Kürzung ab 0 m eingeben.');
+   if(amount===0)return track.map(p=>[...p]);
+   const total=trackLength(track);
+   if(amount>=total-0.05)throw Error(`Die Kürzung muss kleiner als die Spurlänge (${total.toFixed(2)} m) sein.`);
+   const seq=(fromStart?track:[...track].reverse()).map(p=>[...p]);
+   let remaining=amount;
+   while(seq.length>1){
+     const d=meters(seq[0],seq[1]);
+     if(d<0.001){seq.shift();continue;}
+     if(remaining>=d-0.001){remaining-=d;seq.shift();continue;}
+     if(remaining>0){
+       const a=project(seq[0]),b=project(seq[1]),ratio=remaining/d;
+       // Meterbasierte Projektion mit kleiner geodätischer Nachkorrektur.
+       let t=ratio;
+       for(let k=0;k<5;k++){
+         const q=unproject([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]);
+         const actual=meters(seq[0],q);
+         if(actual>0)t*=remaining/actual;
+       }
+       seq[0]=unproject([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]);
+     }
+     break;
+   }
+   if(seq.length<2)throw Error('Die Spur wäre nach dem Kürzen zu kurz.');
+   return fromStart?seq:seq.reverse();
+ }
+ function cross2(a,b){return a[0]*b[1]-a[1]*b[0]}
+ function boundaryIntersections(origin,direction){
+   const ring=st.field.boundary.map(project);
+   const hits=[];
+   const n=ring.length>2&&Math.hypot(ring[0][0]-ring[ring.length-1][0],ring[0][1]-ring[ring.length-1][1])<.01?ring.length-1:ring.length;
+   for(let i=0;i<n;i++){
+     const a=ring[i],b=ring[(i+1)%n],edge=[b[0]-a[0],b[1]-a[1]];
+     const den=cross2(direction,edge);
+     if(Math.abs(den)<1e-10)continue;
+     const delta=[a[0]-origin[0],a[1]-origin[1]];
+     const t=cross2(delta,edge)/den;
+     const u=cross2(delta,direction)/den;
+     if(u>=-1e-8&&u<=1+1e-8)hits.push({t,edge:i});
+   }
+   return hits;
+ }
+ function snapEndToBoundary(track,atStart,inset){
+   if(!st.field)throw Error('Zuerst ein Feld auswählen.');
+   if(!Number.isFinite(inset)||inset<0)throw Error('Abstand muss mindestens 0 m sein.');
+   const idx=atStart?0:track.length-1,neighbor=atStart?1:track.length-2;
+   const p=project(track[idx]),q=project(track[neighbor]);
+   const dx=p[0]-q[0],dy=p[1]-q[1],length=Math.hypot(dx,dy);
+   if(length<.001)throw Error('Der Endabschnitt benötigt zwei unterschiedliche Punkte.');
+   const outward=[dx/length,dy/length];
+   const hits=boundaryIntersections(p,outward).filter(h=>h.t>=-0.05).sort((a,b)=>a.t-b.t);
+   if(!hits.length)throw Error('In Verlängerung dieses Spurendes wurde keine Feldgrenze gefunden. Bitte Endrichtung anpassen.');
+   // Ziel ist der erste Schnittpunkt mit der Feldgrenze, abzüglich des
+   // gewünschten Abstands ins Feld hinein.
+   const target=hits[0].t-inset;
+   const candidate=unproject([p[0]+outward[0]*target,p[1]+outward[1]*target]);
+   const updated=track.map(x=>[...x]);updated[idx]=candidate;
+   if(meters(updated[idx],updated[neighbor])<.05)throw Error('Abstand zu groß: Der letzte Spurabschnitt würde verschwinden oder umkehren.');
+   const before=[p[0]-q[0],p[1]-q[1]];
+   const after=[project(candidate)[0]-q[0],project(candidate)[1]-q[1]];
+   if(before[0]*after[0]+before[1]*after[1]<=0)throw Error('Abstand zu groß: Spur würde über den nächsten Stützpunkt hinauslaufen. Bitte zuerst kürzen oder Punkte anpassen.');
+   return {track:updated,edge:hits[0].edge};
+ }
  function showBoundaryLengths(){
    if(st.edgeLabels){st.edgeLabels.clearLayers()}else{st.edgeLabels=L.layerGroup().addTo(st.map)}
    if(!st.field)return;
@@ -45,6 +112,10 @@ const MP=(()=>{
  function finish(){if(st.drawing.length>=2){history();st.tracks.push(st.drawing);st.selected=st.tracks.length-1;msg('Spur angelegt. Jetzt präzise bearbeiten oder speichern.')}else if(st.drawing.length)msg('Mindestens zwei Punkte setzen.',true);st.drawing=[];st.mode='select';render()}
  async function save(){if(st.mode==='draw')finish();if(!st.field||!$('mp-name').value.trim()||!$('mp-tractor').value||!$('mp-implement').value)throw Error('Name, Feld, Traktor und Anbaugerät auswählen.');if(!st.tracks.length)throw Error('Mindestens eine Spur zeichnen.');const body={name:$('mp-name').value.trim(),field_id:+$('mp-field').value,tractor_id:+$('mp-tractor').value,implement_id:+$('mp-implement').value,tracks:st.tracks};let result;if(st.id){result=await api(`/api/work-plannings/${st.id}/manual-tracks`,{method:'PUT',body:JSON.stringify({tracks:st.tracks})})}else{result=await api('/api/work-plannings/manual',{method:'POST',body:JSON.stringify(body)});st.id=result.id}st.dirty=false;msg(`${st.tracks.length} Fahrspuren gespeichert (Arbeitsauftrag ${st.id}). GPS-Führung verwendet diese Spuren.`);await load()}
  async function openPlan(plan){if(st.dirty&&!confirm('Ungespeicherte Spuren verwerfen?'))return;const manual=await api(`/api/work-plannings/${plan.id}/manual-tracks`);if(!manual.tracks.length){msg('Dieser ältere Auftrag hat keine manuell gespeicherten Spuren.',true);return}$('mp-name').value=plan.name;$('mp-tractor').value=plan.tractor_id;$('mp-implement').value=plan.implement_id;$('mp-field').value=plan.field_id;st.dirty=false;await loadField();st.tracks=manual.tracks;st.id=plan.id;st.selected=0;st.dirty=false;render();msg(`Arbeitsauftrag ${plan.id} mit ${st.tracks.length} manuellen Spuren geladen.`)}
- function init(){const bind=(id,fn)=>$(id).addEventListener('click',()=>{try{const r=fn();if(r?.catch)r.catch(e=>msg(e.message,true))}catch(e){msg(e.message,true)}});bind('mp-refresh',load);bind('mp-select',()=>{st.mode='select';st.drawing=[];render()});bind('mp-draw',()=>{st.mode='draw';st.drawing=[];msg('Auf die Karte klicken; mit „Zeichnung abschließen“ beenden.')});bind('mp-finish',finish);bind('mp-undo',()=>{if(st.history.length){st.tracks=JSON.parse(st.history.pop());st.selected=-1;st.dirty=true;render()}});bind('mp-delete',()=>{if(st.selected>=0){history();st.tracks.splice(st.selected,1);st.selected=-1;render()}});bind('mp-apply-shift',()=>{if(st.selected<0)throw Error('Spur auswählen.');const m=Number($('mp-shift').value);if(!Number.isFinite(m))throw Error('Ungültiger Meterwert.');const t=offset(st.tracks[st.selected],m);history();st.tracks[st.selected]=t;render()});bind('mp-add-parallel',()=>{if(st.selected<0)throw Error('Spur auswählen.');const m=Number($('mp-parallel').value);if(!Number.isFinite(m)||m===0)throw Error('Abstand muss ungleich null sein.');const t=offset(st.tracks[st.selected],m);history();st.tracks.push(t);st.selected=st.tracks.length-1;render()});bind('mp-apply-length',()=>{if(st.selected<0)throw Error('Bitte zuerst eine Spur auswählen.');const raw=$('mp-length').value;const target=Number(raw);if(!raw.trim()||!Number.isFinite(target))throw Error('Bitte eine Länge in Metern eingeben.');const updated=setLength(st.tracks[st.selected],target);history();st.tracks[st.selected]=updated;render();msg(`Spurlänge auf ${trackLength(updated).toFixed(2)} m angepasst. Bitte Feldgrenze prüfen.`)});bind('mp-save',save);$('mp-field').onchange=()=>loadField().catch(e=>msg(e.message,true));$('mp-implement').onchange=render;$('mp-bands').onchange=render;}
+ function init(){const bind=(id,fn)=>$(id).addEventListener('click',()=>{try{const r=fn();if(r?.catch)r.catch(e=>msg(e.message,true))}catch(e){msg(e.message,true)}});bind('mp-refresh',load);bind('mp-select',()=>{st.mode='select';st.drawing=[];render()});bind('mp-draw',()=>{st.mode='draw';st.drawing=[];msg('Auf die Karte klicken; mit „Zeichnung abschließen“ beenden.')});bind('mp-finish',finish);bind('mp-undo',()=>{if(st.history.length){st.tracks=JSON.parse(st.history.pop());st.selected=-1;st.dirty=true;render()}});bind('mp-delete',()=>{if(st.selected>=0){history();st.tracks.splice(st.selected,1);st.selected=-1;render()}});bind('mp-apply-shift',()=>{if(st.selected<0)throw Error('Spur auswählen.');const m=Number($('mp-shift').value);if(!Number.isFinite(m))throw Error('Ungültiger Meterwert.');const t=offset(st.tracks[st.selected],m);history();st.tracks[st.selected]=t;render()});bind('mp-add-parallel',()=>{if(st.selected<0)throw Error('Spur auswählen.');const m=Number($('mp-parallel').value);if(!Number.isFinite(m)||m===0)throw Error('Abstand muss ungleich null sein.');const t=offset(st.tracks[st.selected],m);history();st.tracks.push(t);st.selected=st.tracks.length-1;render()});bind('mp-apply-length',()=>{if(st.selected<0)throw Error('Bitte zuerst eine Spur auswählen.');const raw=$('mp-length').value;const target=Number(raw);if(!raw.trim()||!Number.isFinite(target))throw Error('Bitte eine Länge in Metern eingeben.');const updated=setLength(st.tracks[st.selected],target);history();st.tracks[st.selected]=updated;render();msg(`Spurlänge auf ${trackLength(updated).toFixed(2)} m angepasst. Bitte Feldgrenze prüfen.`)});bind('mp-apply-trim-start',()=>{if(st.selected<0)throw Error('Spur auswählen.');const v=Number($('mp-trim-start').value);const t=trimTrack(st.tracks[st.selected],v,true);history();st.tracks[st.selected]=t;render();msg(`Spuranfang um ${v.toFixed(2)} m gekürzt.`)});
+ bind('mp-apply-trim-end',()=>{if(st.selected<0)throw Error('Spur auswählen.');const v=Number($('mp-trim-end').value);const t=trimTrack(st.tracks[st.selected],v,false);history();st.tracks[st.selected]=t;render();msg(`Spurende um ${v.toFixed(2)} m gekürzt.`)});
+ const snap=(atStart)=>{if(st.selected<0)throw Error('Spur auswählen.');const d=Number($('mp-edge-distance').value);const result=snapEndToBoundary(st.tracks[st.selected],atStart,d);history();st.tracks[st.selected]=result.track;render();msg(`${atStart?'Spuranfang':'Spurende'} an Feldkante ${result.edge+1} ausgerichtet (${d.toFixed(2)} m Innenabstand).`);};
+ bind('mp-snap-start',()=>snap(true));bind('mp-snap-end',()=>snap(false));
+ bind('mp-save',save);$('mp-field').onchange=()=>loadField().catch(e=>msg(e.message,true));$('mp-implement').onchange=render;$('mp-bands').onchange=render;}
  document.addEventListener('DOMContentLoaded',init);return {show,load};
 })();
