@@ -27,6 +27,12 @@ git clone https://github.com/tobiasrode-home/pytrac
 cp -r data pytrac/
 cp .env pytrac/
 cd pytrac/
+
+systemctl restart pytrac_backend
+systemctl restart pytrac_kivy
+
+
+
 /usr/bin/python3 -m uvicorn pytrac_backend:app --host 0.0.0.0 --port 8000 --reload --no-access-log
 /usr/bin/python3 /opt/pytrac/pytrac_kivy/main.py
 
