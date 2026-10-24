@@ -38,6 +38,8 @@ class SettingsScreen(BoxLayout):
         self.add_widget(Label(text='Arbeitsauftrag auswählen',size_hint_y=None,height=dp(25),bold=True,font_size='18sp'))
         self.work_order_button=self.make_button('Gespeicherten Arbeitsauftrag laden',lambda *_:self.open_work_order(),height=dp(48))
         self.add_widget(self.work_order_button)
+        # Deutlicher vertikaler Abstand zu den Aktionen darunter.
+        self.add_widget(BoxLayout(size_hint_y=None,height=dp(22)))
         work_actions=BoxLayout(size_hint_y=None,height=dp(46),spacing=dp(8))
         work_actions.add_widget(self.make_button("Neuen Arbeitsauftrag erstellen",lambda *_:self.create_work_order()))
         work_actions.add_widget(self.make_button("Arbeitsauftrag zurücksetzen",lambda *_:self.reset_work_order()))
@@ -50,6 +52,8 @@ class SettingsScreen(BoxLayout):
             self.add_widget(button)
         self.status_label=Label(text='Lade Auswahlmöglichkeiten …',size_hint_y=None,height=dp(32))
         self.add_widget(self.status_label)
+        # Freier Raum wächst mit der Displayhöhe: Helligkeit bleibt unten.
+        self.add_widget(BoxLayout(size_hint_y=1))
         brightness=read_brightness()
         brightness_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
         brightness_row.add_widget(Label(text="Displayhelligkeit",size_hint_x=None,width=dp(160)))
@@ -64,7 +68,6 @@ class SettingsScreen(BoxLayout):
                                           "Displayhelligkeit nicht verfügbar"),
                                     size_hint_y=None,height=dp(24))
         self.add_widget(self.brightness_label)
-        self.add_widget(BoxLayout(size_hint_y=1))
         self.load_choices()
 
     def set_display_brightness(self,value):
