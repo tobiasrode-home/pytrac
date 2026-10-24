@@ -49,3 +49,55 @@
 @media(max-width:1100px){.mp-layout{grid-template-columns:175px minmax(0,1fr) 240px}.mp-map-wrap{grid-column:auto;grid-row:auto}}
 @media(max-width:850px){.mp-layout{grid-template-columns:1fr 1fr}.mp-map-wrap{grid-column:1/-1;grid-row:1}.mp-tools{grid-column:1}.mp-precision{grid-column:2}}
 @media(max-width:560px){.mp-layout{display:flex;flex-direction:column}.mp-layout>*{width:100%;box-sizing:border-box}.mp-map-wrap{order:0}.mp-tools{order:1}.mp-precision{order:2}}
+
+/* V46: Arbeitsplanung nutzt die Fensterbreite, ohne andere Seiten zu verändern. */
+body:has(#section-work-planning:not(.hidden)) .container {
+  max-width: 1760px;
+  width: 100%;
+  padding-inline: clamp(12px, 2vw, 30px);
+}
+#section-work-planning { min-width:0; }
+#section-work-planning .panel { min-width:0; }
+#section-work-planning .mp-layout {
+  grid-template-columns: minmax(165px, 0.75fr) minmax(0, 3.4fr) minmax(230px, 1.05fr);
+  gap: clamp(10px, 1vw, 18px);
+  align-items:start;
+}
+#section-work-planning .mp-tools,
+#section-work-planning .mp-precision { min-width:0; }
+#section-work-planning .mp-map-wrap { min-width:0; grid-column:auto; grid-row:auto; }
+#section-work-planning .mp-map-wrap #mp-map { width:100%; height: min(70vh, 760px); min-height:500px; }
+#section-work-planning .mp-details { max-width:none; width:100%; margin:16px 0; }
+#section-work-planning .mp-three-step { width:100%; }
+#section-work-planning .mp-reference-grid {
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap:12px 18px;
+}
+#section-work-planning .mp-reference-grid label { min-width:0; display:flex; flex-direction:column; gap:5px; }
+#section-work-planning .mp-reference-grid select,
+#section-work-planning .mp-reference-grid input { width:100%; min-width:0; }
+#section-work-planning .mp-config { display:grid; grid-template-columns: repeat(4,minmax(0,1fr)) auto; gap:12px; align-items:end; }
+#section-work-planning .mp-config label { min-width:0; }
+#section-work-planning .mp-config input,
+#section-work-planning .mp-config select { width:100%; min-width:0; }
+@media (max-width: 1120px) {
+  #section-work-planning .mp-layout { grid-template-columns: minmax(155px,1fr) minmax(0,3fr); }
+  #section-work-planning .mp-map-wrap { grid-column:2; grid-row:1; }
+  #section-work-planning .mp-tools { grid-column:1; grid-row:1; }
+  #section-work-planning .mp-precision { grid-column:1/-1; grid-row:2; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:end; }
+  #section-work-planning .mp-precision h3,
+  #section-work-planning .mp-precision #mp-selection,
+  #section-work-planning .mp-precision .muted,
+  #section-work-planning .mp-precision hr,
+  #section-work-planning .mp-precision #mp-coverage { grid-column:1/-1; }
+  #section-work-planning .mp-config { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 720px) {
+  #section-work-planning .mp-layout { display:flex; flex-direction:column; }
+  #section-work-planning .mp-map-wrap { order:0; width:100%; }
+  #section-work-planning .mp-tools { order:1; width:100%; }
+  #section-work-planning .mp-precision { order:2; width:100%; display:flex; }
+  #section-work-planning .mp-map-wrap #mp-map { height:55vh; min-height:340px; }
+  #section-work-planning .mp-reference-grid { grid-template-columns:1fr; }
+  #section-work-planning .mp-config { grid-template-columns:1fr; }
+}
