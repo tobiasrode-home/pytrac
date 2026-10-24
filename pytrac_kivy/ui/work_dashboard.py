@@ -18,6 +18,7 @@ from kivy.uix.widget import Widget
 from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
 from pytrac_kivy.ui.steering_bar import SteeringBar
 from pytrac_kivy.ui.map_autozoom import fit_field_zoom
+from pytrac_kivy.ui.gps_filter import AdaptiveGpsFilter, adjusted_heading
 
 try:
     from kivy_garden.mapview import MapView, MapMarker
@@ -56,11 +57,15 @@ class WorkDashboard(BoxLayout):
         self.selection=selection if selection is not None else {}
         self.on_settings=on_settings
         self.on_status=on_status
-        self.refresh_interval=max(.5,float(refresh_interval))
+        self.refresh_interval=max(.2,float(refresh_interval))
         self.busy=False
         self.navigator=None
         self._marker=None
         self._latest_state=None
+        self.gps_filter=AdaptiveGpsFilter()
+        self.gps_smoothing_enabled=False
+        self.imu_heading_offset_deg=0.0
+        self._last_gps_sample=None
         self.abstract_map=True
         self._refresh_event=None
 
@@ -297,11 +302,15 @@ class WorkDashboard(BoxLayout):
     def _update_record_button(self):
         """Status und Bedienknopf für manuelle GPS-Übersteuerung."""
         if self.record_override is None:
-            self.record_button.text=('GPS: läuft\\nAUTO' if self.recording
-                                     else 'GPS: pausiert\\nAUTO')
+            self.record_button.text=('GPS: läuft\
+AUTO' if self.recording
+                                     else 'GPS: pausiert\
+AUTO')
         else:
-            self.record_button.text=('GPS: läuft\\nMANUELL' if self.recording
-                                     else 'GPS: pausiert\\nMANUELL')
+            self.record_button.text=('GPS: läuft\
+MANUELL' if self.recording
+                                     else 'GPS: pausiert\
+MANUELL')
 
     def toggle_record_override(self):
         """Manuelle Aufnahme unabhängig von der bestätigten Geräteposition.
@@ -330,7 +339,8 @@ class WorkDashboard(BoxLayout):
             return
         title='Anbaugerät absenken' if action=='lower' else 'Anbaugerät ausheben'
         layout=BoxLayout(orientation='vertical',padding=dp(18),spacing=dp(16))
-        layout.add_widget(Label(text=title+'\\nAnhalten, Gerät manuell bedienen und bestätigen.',
+        layout.add_widget(Label(text=title+'\
+Anhalten, Gerät manuell bedienen und bestätigen.',
                                 font_size='23sp',halign='center'))
         self._popup_distance_label=Label(text='GPS-Abstand wird berechnet …',
                                          font_size='29sp',bold=True,
@@ -434,12 +444,48 @@ class WorkDashboard(BoxLayout):
         self.steering_bar.update(None)
         if self.navigator:self.navigator.update(0,0,gps_valid=False)
 
+    def set_navigation_settings(self,data):
+        enabled=bool(data.get("gps_smoothing_enabled",False))
+        offset=float(data.get("imu_heading_offset_deg",0.))
+        if enabled!=self.gps_smoothing_enabled:
+            self.gps_filter.reset()
+            self._last_gps_sample=None
+        self.gps_smoothing_enabled=enabled
+        self.imu_heading_offset_deg=offset
+
     def _show_state(self,data):
-        self._latest_state=data
+        # Rohdaten bleiben unverändert im Backend. Anzeige und Navigation
+        # erhalten eine Kopie mit korrigierter IMU-Ausrichtung und optional
+        # gefilterten Koordinaten.
+        data=dict(data)
         valid=bool(data.get('gps_valid') and data.get('available'))
         lat,lon=data.get('latitude'),data.get('longitude')
         valid=valid and lat is not None and lon is not None
-        self.gps_label.text='GPS: gültig' if valid else 'GPS: kein aktueller Fix'
+        if data.get('imu_valid') and data.get('heading_deg') is not None:
+            data['heading_deg']=adjusted_heading(data['heading_deg'],self.imu_heading_offset_deg)
+        if valid:
+            raw_sample=(data.get('timestamp'),float(lat),float(lon))
+            sample=raw_sample
+            if sample==self._last_gps_sample:
+                # Kein neuer Sensor-Fix: Position unverändert lassen.
+                if self._latest_state:
+                    lat=self._latest_state.get('latitude',lat)
+                    lon=self._latest_state.get('longitude',lon)
+            else:
+                self._last_gps_sample=sample
+                if self.gps_smoothing_enabled:
+                    try:
+                        lat,lon=self.gps_filter.update(lat,lon,data.get('timestamp'),
+                            speed_mps=data.get('speed_mps'),accuracy_m=data.get('gps_accuracy_m'))
+                    except (ValueError,TypeError,OverflowError):
+                        self.gps_filter.reset()
+            data['latitude'],data['longitude']=lat,lon
+        else:
+            self.gps_filter.reset()
+            self._last_gps_sample=None
+        self._latest_state=data
+        self.gps_label.text=(('GPS: gültig · geglättet' if self.gps_smoothing_enabled else 'GPS: gültig · roh')
+                             if valid else 'GPS: kein aktueller Fix')
         speed=data.get('speed_mps')
         self.speed_label.text=(f'Geschwindigkeit: {float(speed)*3.6:.1f} km/h'
                                if speed is not None else 'Geschwindigkeit: —')
@@ -457,7 +503,7 @@ class WorkDashboard(BoxLayout):
         if valid and self.recording and self.navigator and (self.navigator.state.active or self.record_override is True):
             try:
                 # Sensor-Zeitstempel verhindert wiederholtes Speichern desselben Fixes.
-                signature=(data.get('timestamp'),float(lat),float(lon))
+                signature=raw_sample
                 if signature!=self._last_record_signature:
                     from hashlib import sha256
                     fix_key=sha256(repr(signature).encode("utf-8")).hexdigest()

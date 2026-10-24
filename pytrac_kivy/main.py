@@ -32,7 +32,8 @@ class PytracKivyApp(App):
             selection=self.selection,api_client=self.api_client,on_back=self.show_dashboard,
             on_selection_changed=self.selection_changed,on_master_data=self.show_master_data,
             on_wifi_manager=self.show_wifi,on_work_order_loaded=self.work_order_loaded,
-            on_work_order_reset=self.reset_work_order)
+            on_work_order_reset=self.reset_work_order,
+            on_navigation_settings=self.dashboard.set_navigation_settings)
         self._add_screen('settings',self.settings_screen)
         self.master_data_screen=MasterDataScreen(api_url=settings.kivy_api_base_url,
             selection=self.selection,api_client=self.api_client,on_back=self.show_settings,

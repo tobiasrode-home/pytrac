@@ -8,6 +8,7 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
+from kivy.uix.switch import Switch
 from pytrac_kivy.ui.display_brightness import read_brightness, set_brightness
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
 from pytrac_kivy.ui.work_order_dialog import open_work_order_dialog
@@ -16,7 +17,7 @@ from pytrac_kivy.ui.create_work_order import open_create_work_order
 class SettingsScreen(BoxLayout):
     def __init__(self,api_url,selection,api_client=None,on_back=None,
                  on_selection_changed=None,on_master_data=None,on_wifi_manager=None,
-                 on_work_order_loaded=None,on_work_order_reset=None,**kwargs):
+                 on_work_order_loaded=None,on_work_order_reset=None,on_navigation_settings=None,**kwargs):
         super().__init__(orientation='vertical',padding=dp(9),spacing=dp(5),**kwargs)
         self.api_url=api_url.rstrip('/')
         self.api_client=api_client
@@ -27,6 +28,8 @@ class SettingsScreen(BoxLayout):
         self.on_wifi_manager=on_wifi_manager
         self.on_work_order_loaded=on_work_order_loaded
         self.on_work_order_reset=on_work_order_reset
+        self.on_navigation_settings=on_navigation_settings
+        self.navigation_options={"gps_smoothing_enabled":False,"imu_heading_offset_deg":0.0}
         self.choices={'tractor':[],'implement':[],'field':[]}
         self.selection_buttons={}
         header=BoxLayout(size_hint_y=None,height=dp(50),spacing=dp(6))
@@ -69,6 +72,52 @@ class SettingsScreen(BoxLayout):
                                     size_hint_y=None,height=dp(24))
         self.add_widget(self.brightness_label)
         self.load_choices()
+
+    def _smoothing_changed(self,_widget,active):
+        if not self._loading_nav_settings:
+            self.status_label.text=("GPS-Glättung eingeschaltet – Speichern drücken" if active
+                                    else "GPS-Glättung ausgeschaltet – Speichern drücken")
+
+    def load_navigation_settings(self):
+        def worker():
+            try:
+                data=self.api_client.get("/api/navigation-settings")
+                Clock.schedule_once(lambda _dt:self.apply_navigation_settings(data))
+            except Exception as exc:
+                Clock.schedule_once(lambda _dt,msg=str(exc):setattr(self.status_label,"text","Navigationseinstellungen: "+msg))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def apply_navigation_settings(self,data):
+        self._loading_nav_settings=True
+        try:
+            self.navigation_options=dict(data)
+            self.smoothing_switch.active=bool(data.get("gps_smoothing_enabled",False))
+            self.heading_offset_input.text=str(data.get("imu_heading_offset_deg",0.0))
+            if self.on_navigation_settings:self.on_navigation_settings(self.navigation_options)
+        finally:
+            self._loading_nav_settings=False
+
+    def save_navigation_settings(self):
+        try:
+            value=float(self.heading_offset_input.text.replace(",","."))
+            if not -180<=value<=180:raise ValueError("Offset muss zwischen -180° und +180° liegen")
+        except ValueError as exc:
+            self.status_label.text="Ungültiger IMU-Offset: "+str(exc)
+            return
+        payload={"gps_smoothing_enabled":bool(self.smoothing_switch.active),
+                 "imu_heading_offset_deg":value}
+        def worker():
+            try:
+                data=self.api_client.put("/api/navigation-settings",payload)
+                if hasattr(data,"json"):data=data.json()
+                Clock.schedule_once(lambda _dt:self._saved_navigation_settings(data))
+            except Exception as exc:
+                Clock.schedule_once(lambda _dt,msg=str(exc):setattr(self.status_label,"text","Speichern fehlgeschlagen: "+msg))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _saved_navigation_settings(self,data):
+        self.apply_navigation_settings(data)
+        self.status_label.text="GPS-/IMU-Einstellungen in tractor.db gespeichert"
 
     def set_display_brightness(self,value):
         try:

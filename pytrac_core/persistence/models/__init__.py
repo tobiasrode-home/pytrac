@@ -8,3 +8,5 @@ from pytrac_core.persistence.models.work_planning import WorkPlanning
 __all__ = ['Tractor','Implement','MountType','Field','WorkSession','GpsTrackPoint','WorkPlanning']
 
 from pytrac_core.persistence.models.work_progress import WorkProgressPoint
+
+from pytrac_core.persistence.models.navigation_settings import NavigationSettings
