@@ -73,6 +73,7 @@ class WorkDashboard(BoxLayout):
         self._popup_key=None
         self._dismissed_event=None
         self.recording=False
+        self.record_override=None  # None=Automatik, True=manuell AN, False=manuell AUS
         self.recorded_points=[]  # Kompatibilitätszähler für aktuelle Sitzung
         self._recorded_count=0
         self._last_record_signature=None
@@ -122,8 +123,9 @@ class WorkDashboard(BoxLayout):
             ('Nächste Spur',self.next_track),
         ):
             footer.add_widget(self._button(title,callback))
-        self.record_button=Label(text='GPS: pausiert',font_size='14sp',size_hint_x=1)
+        self.record_button=self._button('GPS: pausiert',self.toggle_record_override)
         footer.add_widget(self.record_button)
+        self._update_record_button()
         self.update_selection()
         self._refresh_event=Clock.schedule_interval(lambda _dt:self.refresh(),self.refresh_interval)
         Clock.schedule_once(lambda _dt:self.refresh(),0)
@@ -156,6 +158,7 @@ class WorkDashboard(BoxLayout):
     def _loaded(self,planning,guidance,objects):
         self.steering_bar.update(None)
         self.recording=False
+        self.record_override=None
         self.recorded_points=[]
         self._last_record_signature=None
         self.progress_points=[]
@@ -174,6 +177,7 @@ class WorkDashboard(BoxLayout):
     def reset_work_order(self):
         """Nur aktive Auswahl zurücksetzen, keine gespeicherten Daten löschen."""
         self.recording=False
+        self.record_override=None
         self.navigator=None
         self.progress_points=[]
         self._recorded_count=0
@@ -291,9 +295,29 @@ class WorkDashboard(BoxLayout):
         except ValueError as exc:self.message_label.text=str(exc)
 
     def _update_record_button(self):
-        """Nur Statusanzeige: Start/Stopp erfolgen über Gerätebestätigung."""
-        self.record_button.text=('GPS: Aufnahme läuft' if self.recording
-                                 else 'GPS: pausiert')
+        """Status und Bedienknopf für manuelle GPS-Übersteuerung."""
+        if self.record_override is None:
+            self.record_button.text=('GPS: läuft\\nAUTO' if self.recording
+                                     else 'GPS: pausiert\\nAUTO')
+        else:
+            self.record_button.text=('GPS: läuft\\nMANUELL' if self.recording
+                                     else 'GPS: pausiert\\nMANUELL')
+
+    def toggle_record_override(self):
+        """Manuelle Aufnahme unabhängig von der bestätigten Geräteposition.
+
+        Tippen wechselt den aktuellen Aufnahmestatus. Die nächste
+        Gerätebestätigung gibt die Kontrolle wieder an die Automatik zurück.
+        """
+        if not self.navigator:
+            self.message_label.text='Zuerst einen Arbeitsauftrag laden'
+            return
+        self.record_override=not self.recording
+        self.recording=self.record_override
+        self._update_record_button()
+        self.message_label.text=('GPS manuell gestartet – unabhängig vom Gerätestatus'
+                                 if self.recording else
+                                 'GPS manuell pausiert – unabhängig vom Gerätestatus')
 
     def _show_event_popup(self,action,manual=False):
         if not self.navigator or self._popup is not None:
@@ -338,6 +362,7 @@ class WorkDashboard(BoxLayout):
             self.confirm(action)
             if self.navigator and ((action=='lower' and self.navigator.state.confirmed_lower)
                                    or (action=='raise' and self.navigator.state.confirmed_raise)):
+                self.record_override=None
                 self.recording=(action=='lower')
                 self._update_record_button()
                 self._dismissed_event=None
@@ -429,7 +454,7 @@ class WorkDashboard(BoxLayout):
             heading=data.get('heading_deg')
             if heading is not None and data.get('imu_valid'):
                 self._marker.set_heading(heading)
-        if valid and self.recording and self.navigator and self.navigator.state.active:
+        if valid and self.recording and self.navigator and (self.navigator.state.active or self.record_override is True):
             try:
                 # Sensor-Zeitstempel verhindert wiederholtes Speichern desselben Fixes.
                 signature=(data.get('timestamp'),float(lat),float(lon))
@@ -450,7 +475,7 @@ class WorkDashboard(BoxLayout):
             except Exception as exc:
                 self.recording=False
                 self._update_record_button()
-                self.message_label.text=f'GPS-Speicherfehler: {exc} · nach Fehlerbehebung erneut Absenken bestätigen'
+                self.message_label.text=f'GPS-Speicherfehler: {exc} · nach Fehlerbehebung GPS-Knopf drücken'
         if self.navigator:
             fix=self.navigator.update(lon,lat,gps_valid=valid) if valid else self.navigator.update(0,0,gps_valid=False)
             if fix:
