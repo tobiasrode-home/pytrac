@@ -57,6 +57,33 @@ def _segments(geometry):
     return [g for g in getattr(geometry, "geoms", ()) if g.geom_type == "LineString"]
 
 
+def _extend_offset_ends(geometry, extension):
+    """Verlängert NUR die Enden der fertigen Parallelspur tangential.
+
+    Die ursprüngliche Referenzlinie bleibt unverändert. Dadurch entstehen
+    keine neuen Knicke durch versetzte, künstlich verlängerte Grenzkanten.
+    """
+    def extend(line):
+        coords=list(line.coords)
+        if len(coords)<2:
+            return line
+        start=next((p for p in coords[1:] if math.dist(p,coords[0])>1e-6),None)
+        end=next((p for p in reversed(coords[:-1]) if math.dist(p,coords[-1])>1e-6),None)
+        if start is None or end is None:
+            return line
+        u=_unit((start[0]-coords[0][0],start[1]-coords[0][1]))
+        v=_unit((coords[-1][0]-end[0],coords[-1][1]-end[1]))
+        return LineString([(coords[0][0]-u[0]*extension,coords[0][1]-u[1]*extension),
+                           *coords,
+                           (coords[-1][0]+v[0]*extension,coords[-1][1]+v[1]*extension)])
+    if geometry.geom_type=="LineString":
+        return extend(geometry)
+    from shapely.geometry import MultiLineString
+    if geometry.geom_type=="MultiLineString":
+        return MultiLineString([extend(line) for line in geometry.geoms])
+    return geometry
+
+
 def _xy_line(a, b):
     return [[float(a[0]), float(a[1])], [float(b[0]), float(b[1])]]
 
@@ -259,29 +286,16 @@ def plan_route(params: Parameters) -> dict:
             if (cb[0]-ca[0])*(db[0]-da[0])+(cb[1]-ca[1])*(db[1]-da[1])<0:
                 side="right" if side=="left" else "left"
         max_dist=polygon.bounds[2]-polygon.bounds[0]+polygon.bounds[3]-polygon.bounds[1]
-        # Parallelkurven enden sonst an der Referenzkante, nicht an der
-        # Stirnseite. Tangential verlängern, anschließend am Feld clippen.
-        original_base=base
-        coords=list(base.coords)
-        if len(coords)<2:
-            raise GuidanceError("Referenzlinie zu kurz.")
-        a0,a1=coords[0],coords[1]
-        b0,b1=coords[-2],coords[-1]
-        ux,uy=_unit((a1[0]-a0[0],a1[1]-a0[1]))
-        vx,vy=_unit((b1[0]-b0[0],b1[1]-b0[1]))
-        extension=max(100.,max_dist*2)
-        base=LineString([(a0[0]-ux*extension,a0[1]-uy*extension),
-                         *coords,
-                         (b1[0]+vx*extension,b1[1]+vy*extension)])
         for i in range(min(2000,int(max_dist/width)+2)):
             distance=first_distance+i*width
             try:
                 curve=base.parallel_offset(distance,side,join_style=2)
             except Exception as exc:
                 raise GuidanceError("Referenzkante kann nicht versetzt werden.") from exc
-            # Die aufgezeichnete erste Fahrt bleibt exakt erhalten.
-            if params.driven_reference and i==0:
-                curve=original_base
+            # Erst parallel versetzen, DANN jede fertige Spur bis zur
+            # Feld-/Vorgewendegrenze verlängern. Nicht die Referenzkette
+            # selbst verlängern (das erzeugte in V34 die Treppen).
+            curve=_extend_offset_ends(curve,max(100.,max_dist*2))
             segments=_segments(curve.intersection(usable))
             found=False
             for segment in segments:
