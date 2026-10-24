@@ -101,3 +101,26 @@ body:has(#section-work-planning:not(.hidden)) .container {
   #section-work-planning .mp-reference-grid { grid-template-columns:1fr; }
   #section-work-planning .mp-config { grid-template-columns:1fr; }
 }
+
+/* V49: Drei Bezugslinien als drei Zeilen: Dropdown links, Meterwert rechts. */
+#section-work-planning .mp-reference-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(150px, 1fr);
+  gap: 12px 18px;
+  align-items: end;
+}
+#section-work-planning .mp-reference-grid > label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+#section-work-planning .mp-reference-grid select,
+#section-work-planning .mp-reference-grid input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+@media (max-width: 560px) {
+  #section-work-planning .mp-reference-grid { grid-template-columns: 1fr; }
+}
