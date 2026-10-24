@@ -72,7 +72,11 @@ class WorkDashboard(BoxLayout):
         # Die Lenkhilfe belegt die gesamte Displaybreite und steht ganz oben.
         self.steering_bar=SteeringBar(size_hint_y=None,height=dp(86))
         self.add_widget(self.steering_bar)
-        self.selection_label=self._label('',height=34)
+        # Kompakte, durchgehende Statuszeile unter der Lenkempfehlung.
+        self.selection_label=self._label('',height=36)
+        self.selection_label.font_size='13sp'
+        self.selection_label.shorten=True
+        self.selection_label.shorten_from='right'
         self.add_widget(self.selection_label)
         self._popup=None
         self._popup_key=None
@@ -90,7 +94,7 @@ class WorkDashboard(BoxLayout):
         body=BoxLayout(spacing=dp(8))
         self.add_widget(body)
         if MapView is not None:
-            self.map_view=MapView(lat=51.3,lon=9.5,zoom=14,size_hint_x=.67)
+            self.map_view=MapView(lat=51.3,lon=9.5,zoom=14)
             self.field_overlay=FieldOverlay(self.map_view)
             self.map_view.add_layer(self.field_overlay)
             self.field_overlay.set_abstract(True)
@@ -100,10 +104,10 @@ class WorkDashboard(BoxLayout):
             body.add_widget(self.map_view)
         else:
             self.map_view=self.field_overlay=self.guidance_overlay=None
-            body.add_widget(Label(text='Karte nicht verfügbar: kivy-garden.mapview installieren',size_hint_x=.67))
+            body.add_widget(Label(text='Karte nicht verfügbar: kivy-garden.mapview installieren'))
 
-        panel=BoxLayout(orientation='vertical',spacing=dp(5),padding=dp(6),size_hint_x=.33)
-        body.add_widget(panel)
+        # Interne Statuslabels bleiben für bestehende Abläufe und Fehlermeldungen
+        # erhalten, werden aber NICHT als rechte Seitenleiste angezeigt.
         self.order_label=self._label('Kein Arbeitsauftrag geladen',height=43)
         self.track_label=self._label('Spur: —',height=40)
         self.offset_label=self._label('Spurabweichung: —',height=40)
@@ -112,10 +116,6 @@ class WorkDashboard(BoxLayout):
         self.gps_label=self._label('GPS: —',height=34)
         self.speed_label=self._label('Geschwindigkeit: —',height=34)
         self.message_label=self._label('Bereit',height=65)
-        for label in (self.order_label,self.track_label,self.offset_label,self.remaining_label,
-                      self.action_label,self.gps_label,self.speed_label,self.message_label):
-            panel.add_widget(label)
-        panel.add_widget(Widget())
         # Alle Bedienelemente in einer durchgehenden unteren Leiste.
         footer=BoxLayout(size_hint_y=None,height=dp(60),spacing=dp(6))
         self.add_widget(footer)
@@ -174,6 +174,7 @@ class WorkDashboard(BoxLayout):
         self.selection.update(objects)
         self.selection_changed()
         self.order_label.text=f"Arbeit: {planning.get('name','—')}"
+        self.update_selection()
         self.message_label.text='Hauptfeld geladen · Navigation bereit'
         self._update_track_display()
         self._load_progress(planning['id'])
@@ -239,8 +240,22 @@ class WorkDashboard(BoxLayout):
 
     def update_selection(self):
         def name(kind):
-            return (self.selection.get(kind) or {}).get('name','nicht gewählt')
-        self.selection_label.text=(f"Traktor: {name('tractor')}  ·  Gerät: {name('implement')}  ·  Feld: {name('field')}")
+            return str((self.selection.get(kind) or {}).get('name') or '—')
+        nav=self.navigator
+        valid=bool((self._latest_state or {}).get('gps_valid') and
+                   (self._latest_state or {}).get('available'))
+        if nav and nav.track:
+            track=f'{nav.state.track_index+1}/{len(nav.tracks)}'
+        else:
+            track='—/—'
+        implement='Aktiv' if nav and nav.state.active else 'Bereit'
+        planning=nav.planning if nav else {}
+        work=str(planning.get('name') or '—')
+        ident=str(planning.get('id') or '—')
+        self.selection_label.text=(
+            f"GPS: {'Aktiv' if valid else 'N/A'}   |   Spur: {track}   |   "
+            f"Arbeitsgerät: {implement}   |   Arbeit: {work} "
+            f"({name('tractor')}, {name('implement')}, {name('field')}, ID {ident})")
 
     def selection_changed(self):
         self.update_selection()
@@ -267,6 +282,7 @@ class WorkDashboard(BoxLayout):
                                + (f" · Seite {track.get('side_id')}" if track.get('side_id') is not None else ''))
         if self.guidance_overlay:
             self.guidance_overlay.set_plan(nav.guidance,nav.state.phase,track['id'])
+        self.update_selection()
 
     def switch_phase(self,phase):
         if not self.navigator:return
@@ -442,6 +458,7 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         self.gps_label.text='Backend: nicht erreichbar'
         self.message_label.text=error
         self.steering_bar.update(None)
+        self.update_selection()
         if self.navigator:self.navigator.update(0,0,gps_valid=False)
 
     def set_navigation_settings(self,data):
@@ -548,6 +565,7 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         elif not valid:
             self.steering_bar.update(None)
             self.message_label.text=str(data.get('reason') or 'Kein gültiger GPS-Fix')
+        self.update_selection()
         if self.on_status:self.on_status(self.message_label.text)
 
     def _driving_reverse(self, data):

@@ -1,5 +1,6 @@
 """Feldgrenzen mit optionaler abstrakter, kartenfreier Darstellung."""
-from kivy.graphics import Color,Line,Rectangle
+from kivy.graphics import Color,Line,Rectangle,Mesh
+from math import hypot
 from kivy_garden.mapview import MapLayer
 
 def _rings_from_field(field):
@@ -67,8 +68,19 @@ class FieldOverlay(MapLayer):
                 if len(segment)<2:continue
                 coords=[value for x,y,_,_ in segment for value in (x,y)]
                 if self.working_width_m>0:
-                    # Breite ist kartografische Näherung; GPS-Genauigkeit beachten.
-                    lat=segment[0][2]
-                    width=max(1,min(300,meters_to_pixels(self.map_view,lat,segment[0][3],self.working_width_m)))
-                    Color(.2,.7,.25,.32);Line(points=coords,width=width)
-                Color(1,.72,.12,1);Line(points=coords,width=2.5)
+                    # Jede Strecke als flaches Rechteck mit exakt projizierter
+                    # Arbeitsbreite zeichnen: keine kreisförmigen Punktmarker.
+                    # Verbundene Rechtecke bilden ein durchgehendes Arbeitsband.
+                    Color(.2,.7,.25,.36)
+                    for (x0,y0,lat0,lon0),(x1,y1,lat1,lon1) in zip(segment,segment[1:]):
+                        length=hypot(x1-x0,y1-y0)
+                        if length<.001:continue
+                        width=max(1.,min(1000.,meters_to_pixels(
+                            self.map_view,(lat0+lat1)/2,(lon0+lon1)/2,self.working_width_m)))
+                        nx=-(y1-y0)/length*width/2
+                        ny=(x1-x0)/length*width/2
+                        vertices=[x0+nx,y0+ny,0,0, x0-nx,y0-ny,0,0,
+                                  x1-nx,y1-ny,0,0, x1+nx,y1+ny,0,0]
+                        Mesh(vertices=vertices,indices=[0,1,2,0,2,3],mode='triangles')
+                Color(1,.72,.12,1)
+                Line(points=coords,width=2)
