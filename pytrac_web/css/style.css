@@ -36,3 +36,16 @@
 .mp-reference-grid select,.mp-reference-grid input,.mp-end-tools select{width:100%}
 @media(max-width:1000px){.mp-layout{grid-template-columns:1fr 3fr}.mp-map-wrap{grid-column:auto;grid-row:auto}}
 @media(max-width:700px){.mp-layout{display:block}.mp-details-grid,.mp-end-tools{grid-template-columns:1fr}.mp-reference-grid{grid-template-columns:1fr}.mp-map-wrap #mp-map{height:55vh}}
+
+/* V45: zentrale Karte mit schmalen Werkzeugen links und präziser Eingabe rechts */
+.mp-layout{display:grid;grid-template-columns:205px minmax(0,1fr) 265px;gap:12px;align-items:start}
+.mp-precision{display:flex;flex-direction:column;gap:9px;min-width:0}
+.mp-precision button{width:100%;text-align:left}
+.mp-precision input,.mp-precision select{width:100%;box-sizing:border-box}
+.mp-precision h3{margin:5px 0}
+.mp-precision hr{width:100%;border:0;border-top:1px solid #d9e4dd;margin:8px 0}
+.mp-precision .muted{font-size:12px;line-height:1.4}
+.mp-precision #mp-coverage{font-size:12px}
+@media(max-width:1100px){.mp-layout{grid-template-columns:175px minmax(0,1fr) 240px}.mp-map-wrap{grid-column:auto;grid-row:auto}}
+@media(max-width:850px){.mp-layout{grid-template-columns:1fr 1fr}.mp-map-wrap{grid-column:1/-1;grid-row:1}.mp-tools{grid-column:1}.mp-precision{grid-column:2}}
+@media(max-width:560px){.mp-layout{display:flex;flex-direction:column}.mp-layout>*{width:100%;box-sizing:border-box}.mp-map-wrap{order:0}.mp-tools{order:1}.mp-precision{order:2}}
