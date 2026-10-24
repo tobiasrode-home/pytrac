@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from shapely.geometry import Polygon, LineString, Point
 from shapely.ops import transform
@@ -175,6 +175,7 @@ class WorkPlanningService:
         from pytrac_core.persistence.models.work_progress import WorkProgressPoint
         from sqlalchemy import delete
         self.db.execute(delete(WorkProgressPoint).where(WorkProgressPoint.planning_id==planning_id))
+        self.db.execute(text('DELETE FROM work_planning_manual_tracks WHERE planning_id=:id'),{'id':planning_id})
         self.db.delete(row)
         self.db.commit()
 
@@ -224,5 +225,12 @@ class WorkPlanningService:
                 WorkProgressPoint.track_id=="1").order_by(WorkProgressPoint.recorded_at,WorkProgressPoint.id)).all()
             if len(points)>=2:
                 driven=[[p.longitude,p.latitude] for p in points]
-        return self.guidance(GuidanceRequest(**plan.model_dump(exclude={'id','start_point','created_at'}),
+        result=self.guidance(GuidanceRequest(**plan.model_dump(exclude={'id','start_point','created_at'}),
                                              output_mode=output_mode, implement_lead_m=implement_lead_m),driven_reference=driven)
+        saved=self.db.execute(text('SELECT tracks_json FROM work_planning_manual_tracks WHERE planning_id=:id'),
+                              {'id':planning_id}).scalar_one_or_none()
+        if saved:
+            from pytrac_core.services.guidance.route_planner import manual_track_guidance
+            implement=self.db.get(Implement,plan.implement_id)
+            result=manual_track_guidance(result,json.loads(saved),implement.work_offset_m,implement_lead_m)
+        return result

@@ -23,7 +23,20 @@
 </div><h3>Grenzen auf der Karte wählen</h3><p>Vor dem Anklicken einen Auswahlmodus wählen. Blau = Ausrichtung, Orange = Startgrenzen.</p>
 <div class="wp-toolbar"><button type="button" class="active" data-wp-mode="alignment">Ausrichtungskante wählen</button><button type="button" data-wp-mode="start">Zwei Startgrenzen wählen</button></div>
 <div id="wp-map" aria-label="Karte zur Auswahl der Feldgrenzen"></div><p>Ausrichtung: <strong id="wp-alignment-label">nicht ausgewählt</strong></p><p>Startgrenzen: <strong id="wp-start-label">nicht ausgewählt</strong></p><p>Berechneter Startpunkt: <strong id="wp-start-point">Noch nicht berechnet</strong></p>
-<div class="wp-guidance-options"><label>Spurübergänge anzeigen<select id="wp-guidance-mode"><option value="turns">Wendemanöver als Vorschau</option><option value="targets">Nur Zielpunkt der nächsten Spur</option></select></label><button type="button" id="wp-guidance">Fahrspuren berechnen</button><p class="muted">Orange Wendemanöver im Hauptfeld sind schematisch und nicht auf Fahrbarkeit geprüft. Grüne Vorgewendespuren sind ausschließlich gerade Arbeitsbahnen; Umsetzen erfolgt durch den Fahrer.</p></div><label>Hinweis-Vorlauf (m, nicht gespeichert)<input id="wp-implement-lead" type="number" min="0" max="100" step="0.5" value="0"><span class="muted">0 m = Markierung direkt an der Arbeitsgrenze. Bei Vorlauf erscheinen zusätzliche Hinweispunkte.</span></label><div id="wp-guidance-summary" role="status"></div><div id="wp-implement-events" class="wp-implement-events" aria-label="Geplante Arbeitsgeräte-Anweisungen"></div>
+<div class="wp-guidance-options"><label>Spurübergänge anzeigen<select id="wp-guidance-mode"><option value="turns">Wendemanöver als Vorschau</option><option value="targets">Nur Zielpunkt der nächsten Spur</option></select></label><button type="button" id="wp-guidance">Fahrspuren berechnen</button><p class="muted">Orange Wendemanöver im Hauptfeld sind schematisch und nicht auf Fahrbarkeit geprüft. Grüne Vorgewendespuren sind ausschließlich gerade Arbeitsbahnen; Umsetzen erfolgt durch den Fahrer.</p></div><label>Hinweis-Vorlauf (m, nicht gespeichert)<input id="wp-implement-lead" type="number" min="0" max="100" step="0.5" value="0"><span class="muted">0 m = Markierung direkt an der Arbeitsgrenze. Bei Vorlauf erscheinen zusätzliche Hinweispunkte.</span></label><section class="wp-manual-editor"><h3>Fahrspuren manuell bearbeiten (V40)</h3>
+<p>Erst eine Arbeitsplanung speichern und über „Laden“ öffnen. „Automatik übernehmen“ lädt die berechneten Spuren; „Leer beginnen“ ermöglicht vollständig freie Spuren.</p>
+<div class="wp-manual-buttons">
+<button type="button" id="wp-manual-auto">Automatik übernehmen</button>
+<button type="button" id="wp-manual-empty">Leer beginnen</button>
+<button type="button" id="wp-manual-add">Spur zeichnen</button>
+<button type="button" id="wp-manual-edit">Punkte bearbeiten</button>
+<button type="button" id="wp-manual-delete">Spur löschen</button>
+<button type="button" id="wp-manual-undo">Rückgängig</button>
+<button type="button" id="wp-manual-save">Manuelle Spuren speichern</button>
+<button type="button" id="wp-manual-reset">Automatik wiederherstellen</button>
+</div><p id="wp-manual-status" role="status">Noch kein Arbeitsauftrag geladen.</p>
+<p class="muted">Spur zeichnen: Punkte auf die Karte klicken, mit „Spur zeichnen“ abschließen. Punkte bearbeiten: Spur anklicken, Markierungen ziehen. Ein Klick auf eine ausgewählte Linie fügt einen Punkt ein. Feldgrenze und Arbeitsbreite vor dem Einsatz kontrollieren.</p></section>
+<div id="wp-guidance-summary" role="status"></div><div id="wp-implement-events" class="wp-implement-events" aria-label="Geplante Arbeitsgeräte-Anweisungen"></div>
 <div class="form-actions"><button type="button" id="wp-preview">Startpunkt berechnen</button><button class="primary" type="submit">Arbeitsplanung speichern</button></div><p id="wp-status" role="status"></p></form></article>
 <article class="panel"><h3>Gespeicherte Arbeitsplanungen</h3><div id="wp-list"></div></article></section>
 <section id="section-work-history" class="page-section hidden">

@@ -2,7 +2,7 @@
 /* Nur Darstellung und API-Kommunikation; fachliche Berechnungen im Python-Service. */
 const WP = (() => {
   const el = id => document.getElementById(id);
-  const state = {loadingSaved:false,field:null, edges:[], selected:{alignment:null,start:[]}, mode:'alignment', map:null, layers:null, marker:null, defaults:null, override:false, guidanceLayers:null};
+  const state = {loadingSaved:false,field:null, edges:[], selected:{alignment:null,start:[]}, mode:'alignment', map:null, layers:null, marker:null, defaults:null, override:false, guidanceLayers:null,planningId:null,manualTracks:[],manualMode:null,manualLayers:null,manualVertices:null,manualSelected:-1,manualHistory:[],manualDrawing:[]};
   async function api(url, options={}) {
     const response = await fetch(url,{...options, headers:{'Content-Type':'application/json',...options.headers}});
     if(!response.ok) {
@@ -76,6 +76,10 @@ const WP = (() => {
       // Vorhandene Anzeigeeinstellungen werden daher beibehalten.
       await updateDefaults();
       const previewResult=await preview();
+      state.planningId=plan.id;
+      const manual=await api(`/api/work-plannings/${plan.id}/manual-tracks`);
+      state.manualTracks=manual.tracks;
+      renderManual();
       await guidance(plan.id);
       status(`Arbeitsplanung „${plan.name}“ (ID ${plan.id}) geladen. Die Planung kann erneut berechnet oder als neue Arbeit gespeichert werden.`);
       el('wp-form').scrollIntoView({behavior:'smooth',block:'start'});
@@ -100,7 +104,8 @@ const WP = (() => {
     updateSelection();
   }
   async function loadField() {
-    resetMap();if(!selected('field'))return;
+    resetMap();state.planningId=null;state.manualTracks=[];state.manualMode=null;
+    if(!selected('field'))return;
     try {
       state.field=await api('/api/fields/'+selected('field'));
       const coordinates=state.field.boundary;
@@ -109,6 +114,7 @@ const WP = (() => {
         state.map=L.map('wp-map').setView([51.3,9.5],13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(state.map);
         state.layers=L.layerGroup().addTo(state.map);state.guidanceLayers=L.layerGroup().addTo(state.map);
+        initManual();
       }
       const vertices=coordinates.slice(0,-1);
       L.polygon(vertices.map(([lon,lat])=>[lat,lon]),{color:'#5b8d5a',weight:2,fillOpacity:0.12,interactive:false}).addTo(state.layers);
@@ -216,14 +222,113 @@ const WP = (() => {
     }
     el('wp-guidance-summary').textContent=`${result.track_count} Fahrspuren · ${result.work_length_m} m Arbeitsweg · `+
       `${result.headland_track_count||0} gerade Vorgewendespuren (grün) · ${result.transitions.length} Hauptfeld-Übergänge. ${result.warnings.join(' ')}`;
+    state.lastGuidance=result;
     status('Spurplanung vom Python-Backend berechnet.');
     return result;
   }
   async function save() {
     await preview();
     const result=await api('/api/work-plannings',{method:'POST',body:JSON.stringify(payload())});
+    state.planningId=result.id;
     status(`Arbeitsplanung ${result.id} gespeichert: ${new Date(result.created_at).toLocaleString('de-DE')}`);
     await load();
+  }
+
+  function manualStatus(message) {el('wp-manual-status').textContent=message;}
+  function snapshot(){state.manualHistory.push(JSON.stringify(state.manualTracks));if(state.manualHistory.length>40)state.manualHistory.shift();}
+  function manualLine(track){return track.map(([lon,lat])=>[lat,lon]);}
+  function renderManual(){
+    if(!state.map)return;
+    if(!state.manualLayers)state.manualLayers=L.layerGroup().addTo(state.map);
+    if(!state.manualVertices)state.manualVertices=L.layerGroup().addTo(state.map);
+    state.manualLayers.clearLayers();state.manualVertices.clearLayers();
+    state.manualTracks.forEach((track,index)=>{
+      const line=L.polyline(manualLine(track),{color:index===state.manualSelected?'#e07919':'#aa39bd',weight:5}).addTo(state.manualLayers);
+      line.on('click',event=>{
+        if(state.manualMode==='draw')return;
+        if(state.manualMode==='edit'&&state.manualSelected===index){
+          snapshot();
+          const p=event.latlng,coords=[p.lng,p.lat];
+          let best=0,distance=Infinity;
+          for(let j=0;j<track.length-1;j++){
+            const a=state.map.latLngToLayerPoint(L.latLng(track[j][1],track[j][0]));
+            const b=state.map.latLngToLayerPoint(L.latLng(track[j+1][1],track[j+1][0]));
+            const q=state.map.latLngToLayerPoint(p),dx=b.x-a.x,dy=b.y-a.y;
+            const t=Math.max(0,Math.min(1,((q.x-a.x)*dx+(q.y-a.y)*dy)/(dx*dx+dy*dy||1)));
+            const d=(q.x-a.x-t*dx)**2+(q.y-a.y-t*dy)**2;
+            if(d<distance){distance=d;best=j;}
+          }
+          track.splice(best+1,0,coords);
+        }
+        state.manualSelected=index;renderManual();
+      });
+      if(index===state.manualSelected&&state.manualMode==='edit'){
+        track.forEach((coord,j)=>{
+          const m=L.marker([coord[1],coord[0]],{draggable:true}).addTo(state.manualVertices);
+          m.on('dragstart',snapshot);
+          m.on('dragend',()=>{
+            const q=m.getLatLng();track[j]=[q.lng,q.lat];renderManual();
+          });
+          m.on('contextmenu',()=>{
+            if(track.length<=2)return;
+            snapshot();track.splice(j,1);renderManual();
+          });
+        });
+      }
+    });
+    if(state.manualDrawing.length){
+      L.polyline(manualLine(state.manualDrawing),{color:'#e07919',weight:4,dashArray:'6,6'}).addTo(state.manualLayers);
+    }
+    manualStatus(`${state.manualTracks.length} manuelle Spuren · ${state.manualMode||'kein Werkzeug'} · Auftrag ${state.planningId||'noch nicht gespeichert'}`);
+  }
+  function manualClick(e){
+    if(state.manualMode!=='draw')return;
+    state.manualDrawing.push([e.latlng.lng,e.latlng.lat]);renderManual();
+  }
+  function finishDrawing(){
+    if(state.manualDrawing.length>=2){snapshot();state.manualTracks.push(state.manualDrawing);state.manualSelected=state.manualTracks.length-1;}
+    state.manualDrawing=[];state.manualMode=null;renderManual();
+  }
+  async function manualAuto(){
+    if(!state.field)throw new Error('Bitte zuerst ein Feld wählen.');
+    const result=await guidance();
+    snapshot();
+    state.manualTracks=result.tracks.map(t=>t.coordinates.map(p=>[...p]));
+    state.manualSelected=-1;state.manualMode=null;renderManual();
+  }
+  async function saveManual(){
+    if(!state.planningId)throw new Error('Bitte Arbeitsplanung zuerst speichern und laden.');
+    if(state.manualMode==='draw')finishDrawing();
+    const result=await api(`/api/work-plannings/${state.planningId}/manual-tracks`,{
+      method:'PUT',body:JSON.stringify({tracks:state.manualTracks})});
+    await guidance(state.planningId);
+    renderManual();
+    status(`${result.track_count} manuelle Spuren gespeichert und für die Spurführung aktiviert.`);
+  }
+  function initManual(){
+    state.map.on('click',manualClick);
+    el('wp-manual-auto').onclick=()=>manualAuto().catch(e=>status(e.message,true));
+    el('wp-manual-empty').onclick=()=>{snapshot();state.manualTracks=[];state.manualDrawing=[];state.manualSelected=-1;state.manualMode=null;renderManual();};
+    el('wp-manual-add').onclick=()=>{
+      if(state.manualMode==='draw'){finishDrawing();return;}
+      state.manualMode='draw';state.manualDrawing=[];renderManual();
+    };
+    el('wp-manual-edit').onclick=()=>{finishDrawing();state.manualMode='edit';renderManual();};
+    el('wp-manual-delete').onclick=()=>{
+      if(state.manualSelected<0){manualStatus('Bitte erst eine Spur auf der Karte auswählen.');return;}
+      snapshot();state.manualTracks.splice(state.manualSelected,1);state.manualSelected=-1;renderManual();
+    };
+    el('wp-manual-undo').onclick=()=>{
+      if(!state.manualHistory.length)return;
+      state.manualTracks=JSON.parse(state.manualHistory.pop());state.manualDrawing=[];state.manualSelected=-1;renderManual();
+    };
+    el('wp-manual-save').onclick=()=>saveManual().catch(e=>status(e.message,true));
+    el('wp-manual-reset').onclick=async()=>{
+      if(!state.planningId)throw new Error('Kein gespeicherter Auftrag.');
+      await api(`/api/work-plannings/${state.planningId}/manual-tracks`,{method:'DELETE'});
+      state.manualTracks=[];state.manualSelected=-1;state.manualMode=null;
+      renderManual();await guidance(state.planningId);status('Automatische Planung wieder aktiv.');
+    };
   }
   function init() {
     if(!el('wp-form'))return;

@@ -353,6 +353,58 @@ def plan_route(params: Parameters) -> dict:
                 strips.append({"offset":i,"length_m":round(segment.length,2),"points_m":coords})
             if i>2 and not found:
                 break
+        # V39: Zusätzliche linke Randspur nur dann, wenn die bestehenden
+        # 10-m-Arbeitsbänder dort eine nennenswerte Restfläche lassen.
+        # Eine Überlappung mit der bisherigen letzten Spur ist erlaubt.
+        # Die linke Randspur wird aus der echten gegenüberliegenden
+        # Feldgrenze konstruiert, nicht durch Verschieben der rechten Spur.
+        if not params.driven_reference and params.headland_mode == "headlands_only":
+            opposite_ids=[
+                j for j in range(n)
+                if j not in excluded
+            ]
+            if opposite_ids and strips:
+                opposite_edges=[LineString([xy[j],xy[(j+1)%n]]) for j in opposite_ids]
+                from shapely.ops import linemerge
+                from shapely.geometry import MultiLineString
+                left_boundary=linemerge(MultiLineString(opposite_edges))
+                if left_boundary.geom_type == "LineString":
+                    # Polygon-Kanten sind gleich orientiert. Die Innenseite
+                    # entspricht daher der Seite der ursprünglichen Kette.
+                    try:
+                        left_candidate=left_boundary.parallel_offset(
+                            width/2,side,join_style=2)
+                    except Exception:
+                        left_candidate=None
+                    if left_candidate is not None and not left_candidate.is_empty:
+                        # Vorgewende-Halbebenen gelten auch für diese Spur.
+                        # Zusätzlich 5 m Sicherheitsabstand zur gesamten
+                        # linken Grenzkette einhalten (numerische Toleranz).
+                        allowed=reference_usable.difference(
+                            left_boundary.buffer(width/2-0.01))
+                        # Die Randspur muss eine zusammenhängende, sinnvolle
+                        # Fahrstrecke sein; keine isolierten Mini-Segmente.
+                        candidates=sorted(
+                            _segments(left_candidate.intersection(allowed)),
+                            key=lambda g:g.length,reverse=True)
+                        if candidates:
+                            candidate=candidates[0]
+                            if candidate.length >= max(20.,width*3):
+                                covered=unary_union([
+                                    LineString(t["points_m"]).buffer(
+                                        width/2,cap_style=2,join_style=2)
+                                    for t in strips])
+                                # Nur zusätzliche Abdeckung innerhalb des
+                                # nutzbaren Feldes zählt.
+                                new_band=candidate.buffer(
+                                    width/2,cap_style=2,join_style=2
+                                ).intersection(reference_usable)
+                                gain=new_band.difference(covered).area
+                                if gain >= width*width*.15:
+                                    strips.append({
+                                        "offset":max(t["offset"] for t in strips)+1,
+                                        "length_m":round(candidate.length,2),
+                                        "points_m":[list(p) for p in candidate.coords]})
     else:
         strips=[]
         for i in range(min(10000,int((stop-start)/width+1e-8)+1)):
@@ -508,3 +560,41 @@ def plan_route(params: Parameters) -> dict:
             "warnings":(["Vorgewende: nur gerade Spuren, Umsetzen und Rückwärtsfahrt erfolgen eigenverantwortlich. Eckbereiche bei schrägen Feldseiten auf Restflächen prüfen.", "Wendekurven sind nur schematische Vorschläge: keine Grenz-, Hindernis- oder Kinematikprüfung. Nicht zur automatischen Lenkung verwenden."]
                         if params.output_mode == "turns" else
                         ["Vorgewende: nur gerade Spuren, Umsetzen und Rückwärtsfahrt erfolgen eigenverantwortlich. Eckbereiche bei schrägen Feldseiten auf Restflächen prüfen.", "Zielpunkte sind Navigationshilfen; die Verbindung zwischen den Spuren ist nicht geprüft."])}
+
+
+def manual_track_guidance(result, lines, implement_offset_m=0.0, lead_m=0.0):
+    '''V40: Nutzer-Spuren statt automatischer Hauptfeldspuren; keine erfundenen Wendekurven.'''
+    from pyproj import Geod
+    import copy
+    geod=Geod(ellps='WGS84')
+    result=copy.deepcopy(result)
+    tracks=[]
+    events=[]
+    for idx, coords in enumerate(lines,1):
+        length=sum(geod.inv(a[0],a[1],b[0],b[1])[2] for a,b in zip(coords,coords[1:]))
+        tracks.append({'id':idx,'coordinates':coords,'length_m':round(length,2),'type':'main_work'})
+        for action,position,next_point in (('lower',coords[0],coords[1]),('raise',coords[-1],coords[-2])):
+            # Der letzte Tangentenvektor zeigt wie der erste in Fahrtrichtung.
+            if action=='lower':
+                azimuth=geod.inv(*position,*next_point)[0]
+            else:
+                azimuth=geod.inv(*next_point,*position)[0]
+            lon,lat,_=geod.fwd(*position,azimuth,implement_offset_m)
+            event={'track_id':idx,'action':action,'label':'Arbeitsgerät absenken' if action=='lower' else 'Arbeitsgerät ausheben',
+                   'work_boundary':position,'coordinate':[lon,lat],'vehicle_stop_coordinate':[lon,lat],
+                   'implement_work_offset_m':implement_offset_m,'requires_stop':True,
+                   'requires_driver_confirmation':True,'reference':'Hauptfeld/Vorgewende','lead_m':lead_m}
+            if lead_m and (action=='lower' or lead_m<length):
+                wlon,wlat,_=geod.fwd(lon,lat,azimuth,-lead_m)
+                event['advance_warning']=[wlon,wlat]
+            events.append(event)
+    result['tracks']=tracks
+    result['track_count']=len(tracks)
+    result['work_length_m']=round(sum(t['length_m'] for t in tracks),2)
+    result['start_point']=tracks[0]['coordinates'][0]
+    result['implement_events']=events
+    result['transitions']=[{'from_track':i,'to_track':i+1,'target':tracks[i]['coordinates'][0],
+                            'mode':'targets','segments':[]} for i in range(1,len(tracks))]
+    result['reference_source']='manual'
+    result['warnings']=list(result.get('warnings',[]))+['Manuelle Spuren: Wendemanöver nicht berechnet. Geräteaktionen müssen bestätigt werden.']
+    return result
