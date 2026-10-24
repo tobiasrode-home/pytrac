@@ -171,6 +171,10 @@ class WorkPlanningService:
     def delete(self, planning_id):
         row = self.db.get(WorkPlanning, planning_id)
         if row is None: raise WorkPlanningNotFoundError(f'Arbeitsplanung {planning_id} nicht gefunden.')
+        # Bei Löschen eines Arbeitsauftrags dessen GPS-Historie mitlöschen.
+        from pytrac_core.persistence.models.work_progress import WorkProgressPoint
+        from sqlalchemy import delete
+        self.db.execute(delete(WorkProgressPoint).where(WorkProgressPoint.planning_id==planning_id))
         self.db.delete(row)
         self.db.commit()
 

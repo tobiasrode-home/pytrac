@@ -6,3 +6,5 @@ from pytrac_core.persistence.models.gps_track_point import GpsTrackPoint
 from pytrac_core.persistence.models.work_planning import WorkPlanning
 
 __all__ = ['Tractor','Implement','MountType','Field','WorkSession','GpsTrackPoint','WorkPlanning']
+
+from pytrac_core.persistence.models.work_progress import WorkProgressPoint

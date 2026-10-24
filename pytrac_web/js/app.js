@@ -92,6 +92,7 @@ function showSection(section){
   closeEditor();clearNotice();
   if(configs[section])loadAll();
   if(section==='work-planning'&&typeof WP!=='undefined')WP.show();
+  if(section==='work-history'&&typeof WH!=='undefined')WH.show();
 }
 document.querySelectorAll('nav [data-section]').forEach(button=>button.addEventListener('click',()=>showSection(button.dataset.section)));
 document.querySelectorAll('[data-create]').forEach(button=>button.addEventListener('click',()=>{showSection(button.dataset.create);openEditor();}));

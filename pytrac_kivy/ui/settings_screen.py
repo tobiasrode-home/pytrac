@@ -11,12 +11,13 @@ from kivy.uix.textinput import TextInput
 from pytrac_kivy.ui.display_brightness import read_brightness, set_brightness
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
 from pytrac_kivy.ui.work_order_dialog import open_work_order_dialog
+from pytrac_kivy.ui.create_work_order import open_create_work_order
 
 class SettingsScreen(BoxLayout):
     def __init__(self,api_url,selection,api_client=None,on_back=None,
                  on_selection_changed=None,on_master_data=None,on_wifi_manager=None,
-                 on_work_order_loaded=None,**kwargs):
-        super().__init__(orientation='vertical',padding=dp(18),spacing=dp(10),**kwargs)
+                 on_work_order_loaded=None,on_work_order_reset=None,**kwargs):
+        super().__init__(orientation='vertical',padding=dp(9),spacing=dp(5),**kwargs)
         self.api_url=api_url.rstrip('/')
         self.api_client=api_client
         self.selection=selection
@@ -25,27 +26,32 @@ class SettingsScreen(BoxLayout):
         self.on_master_data=on_master_data
         self.on_wifi_manager=on_wifi_manager
         self.on_work_order_loaded=on_work_order_loaded
+        self.on_work_order_reset=on_work_order_reset
         self.choices={'tractor':[],'implement':[],'field':[]}
         self.selection_buttons={}
-        header=BoxLayout(size_hint_y=None,height=dp(58),spacing=dp(10))
+        header=BoxLayout(size_hint_y=None,height=dp(50),spacing=dp(6))
         header.add_widget(Label(text='[b]Einstellungen[/b]',markup=True,font_size='25sp'))
         header.add_widget(self.make_button('Zur Übersicht',lambda *_:self.go_back(),width=dp(180)))
         header.add_widget(self.make_button('Stammdaten',lambda *_:self.open_master_data(),width=dp(180)))
         header.add_widget(self.make_button('Wifi',lambda *_:self.open_wifi_manager(),width=dp(180)))
         self.add_widget(header)
-        self.add_widget(Label(text='Arbeitsauftrag auswählen',size_hint_y=None,height=dp(30),bold=True,font_size='18sp'))
-        self.work_order_button=self.make_button('Gespeicherten Arbeitsauftrag laden',lambda *_:self.open_work_order(),height=dp(62))
+        self.add_widget(Label(text='Arbeitsauftrag auswählen',size_hint_y=None,height=dp(25),bold=True,font_size='18sp'))
+        self.work_order_button=self.make_button('Gespeicherten Arbeitsauftrag laden',lambda *_:self.open_work_order(),height=dp(48))
         self.add_widget(self.work_order_button)
-        self.add_widget(Label(text='Oder Traktor, Anbaugerät und Feld manuell auswählen:',size_hint_y=None,height=dp(35)))
+        work_actions=BoxLayout(size_hint_y=None,height=dp(46),spacing=dp(8))
+        work_actions.add_widget(self.make_button("Neuen Arbeitsauftrag erstellen",lambda *_:self.create_work_order()))
+        work_actions.add_widget(self.make_button("Arbeitsauftrag zurücksetzen",lambda *_:self.reset_work_order()))
+        self.add_widget(work_actions)
+        self.add_widget(Label(text='Oder Traktor, Anbaugerät und Feld manuell auswählen:',size_hint_y=None,height=dp(26)))
         for kind,title in [('tractor','Traktor'),('implement','Anbaugerät'),('field','Feld')]:
-            self.add_widget(Label(text=title,size_hint_y=None,height=dp(27),bold=True))
-            button=self.make_button(self.selection_text(kind),lambda _btn,k=kind:self.open_picker(k),height=dp(54))
+            self.add_widget(Label(text=title,size_hint_y=None,height=dp(21),bold=True))
+            button=self.make_button(self.selection_text(kind),lambda _btn,k=kind:self.open_picker(k),height=dp(43))
             self.selection_buttons[kind]=button
             self.add_widget(button)
-        self.status_label=Label(text='Lade Auswahlmöglichkeiten …',size_hint_y=None,height=dp(42))
+        self.status_label=Label(text='Lade Auswahlmöglichkeiten …',size_hint_y=None,height=dp(32))
         self.add_widget(self.status_label)
         brightness=read_brightness()
-        brightness_row=BoxLayout(size_hint_y=None,height=dp(60),spacing=dp(8))
+        brightness_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
         brightness_row.add_widget(Label(text="Displayhelligkeit",size_hint_x=None,width=dp(160)))
         self.brightness_buttons={}
         for level in (25,50,75,100):
@@ -56,7 +62,7 @@ class SettingsScreen(BoxLayout):
         self.add_widget(brightness_row)
         self.brightness_label=Label(text=(f"Aktuell: {brightness} %" if brightness is not None else
                                           "Displayhelligkeit nicht verfügbar"),
-                                    size_hint_y=None,height=dp(28))
+                                    size_hint_y=None,height=dp(24))
         self.add_widget(self.brightness_label)
         self.add_widget(BoxLayout(size_hint_y=1))
         self.load_choices()
@@ -129,6 +135,18 @@ class SettingsScreen(BoxLayout):
         self.status_label.text=f"Ausgewählt: {item.get('name','Unbekannt')}"
         popup.dismiss()
         if self.on_selection_changed:self.on_selection_changed()
+    def reset_work_order(self):
+        for kind in ("tractor","implement","field"):self.selection[kind]=None
+        self.work_order_button.text="Gespeicherten Arbeitsauftrag laden"
+        self.update_selection_buttons()
+        self.status_label.text="Arbeitsauftrag abgewählt; gespeicherte Fahrten bleiben erhalten"
+        if self.on_work_order_reset:self.on_work_order_reset()
+
+    def create_work_order(self):
+        if not self.api_client:
+            self.status_label.text="API-Client fehlt";return
+        open_create_work_order(self.api_client,self.choices,self._work_order_loaded)
+
     def open_work_order(self):
         if not self.api_client:
             self.status_label.text='API-Client fehlt';return

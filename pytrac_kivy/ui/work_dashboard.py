@@ -5,8 +5,6 @@ Vorgewende bleibt beim Fahrer. GPS muss gültig sein.
 """
 import threading
 from pathlib import Path
-from kivy.app import App
-from pytrac_kivy.ui.gps_recording import GpsRecordingStore
 from pytrac_kivy.ui.stop_distance import stop_distance_text, signed_distance_to_stop
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -78,9 +76,7 @@ class WorkDashboard(BoxLayout):
         self.recorded_points=[]  # Kompatibilitätszähler für aktuelle Sitzung
         self._recorded_count=0
         self._last_record_signature=None
-        app=App.get_running_app()
-        base=Path(app.user_data_dir) if app else Path.home()/'.pytrac'
-        self.gps_store=GpsRecordingStore(base/'gps_work_points.sqlite3')
+        self.progress_points=[]
         self._popup_distance_label=None
         self._popup_action=None
         self._popup_feedback_label=None
@@ -162,7 +158,8 @@ class WorkDashboard(BoxLayout):
         self.recording=False
         self.recorded_points=[]
         self._last_record_signature=None
-        self._recorded_count=self.gps_store.count(planning['id'])
+        self.progress_points=[]
+        self._recorded_count=0
         self._dismissed_event=None
         self._update_record_button()
         self.navigator=GuidanceNavigator(guidance,planning)
@@ -171,7 +168,56 @@ class WorkDashboard(BoxLayout):
         self.order_label.text=f"Arbeit: {planning.get('name','—')}"
         self.message_label.text='Hauptfeld geladen · Navigation bereit'
         self._update_track_display()
+        self._load_progress(planning['id'])
         Clock.schedule_once(lambda _dt:self._fit_loaded_field(),0.25)
+
+    def reset_work_order(self):
+        """Nur aktive Auswahl zurücksetzen, keine gespeicherten Daten löschen."""
+        self.recording=False
+        self.navigator=None
+        self.progress_points=[]
+        self._recorded_count=0
+        self._last_record_signature=None
+        self._update_record_button()
+        self.order_label.text="Kein Arbeitsauftrag geladen"
+        self.track_label.text="Spur: —"
+        self.message_label.text="Arbeitsauftrag abgewählt"
+        self.steering_bar.update(None)
+        self.selection_changed()
+        if self.guidance_overlay:
+            self.guidance_overlay.set_plan({},'main','')
+        self._draw_progress()
+
+    def _load_progress(self,planning_id):
+        """Nachladen aus tractor.db über die lokale API."""
+        def worker():
+            try:
+                result=self.api_client.get(f"/api/work-plannings/{planning_id}/progress")
+                Clock.schedule_once(lambda _dt:self._apply_progress(planning_id,result))
+            except Exception as exc:
+                Clock.schedule_once(lambda _dt,error=str(exc):setattr(self.message_label,'text','Fahrdaten laden fehlgeschlagen: '+error))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _apply_progress(self,planning_id,result):
+        if not self.navigator or self.navigator.planning['id']!=planning_id:return
+        self.progress_points=list(result.get('points',[]))
+        self._recorded_count=len(self.progress_points)
+        if self.progress_points:
+            last=self.progress_points[-1]
+            phase=last.get("phase","main")
+            tracks=self.navigator.guidance.get("tracks" if phase=="main" else "headland_tracks",[])
+            index=next((i for i,t in enumerate(tracks) if str(t.get("id"))==str(last.get("track_id"))),None)
+            if index is not None:
+                try:self.navigator.select(phase,index)
+                except ValueError:pass
+                self._update_track_display()
+        self._draw_progress()
+        self.message_label.text=f"{self._recorded_count} GPS-Punkte geladen · letzte Spur gewählt, Gerät erneut bestätigen"
+
+    def _draw_progress(self):
+        if self.field_overlay:
+            self.field_overlay.set_data(field=self.selection.get('field'),track_points=self.progress_points,
+                                        working_width_m=(self.selection.get('implement') or {}).get('working_width_m',0))
 
     def _fit_loaded_field(self):
         if not self.map_view:return
@@ -191,7 +237,8 @@ class WorkDashboard(BoxLayout):
         self.update_selection()
         field=self.selection.get('field')
         if self.field_overlay:
-            self.field_overlay.set_data(field=field,track_points=[])
+            self.field_overlay.set_data(field=field,track_points=self.progress_points,
+                                        working_width_m=(self.selection.get("implement") or {}).get("working_width_m",0))
         if field and self.map_view and field_center:
             center=field_center(field)
             if center:
@@ -263,7 +310,7 @@ class WorkDashboard(BoxLayout):
             return
         self.recording=True
         self._update_record_button()
-        self.message_label.text='GPS-Aufzeichnung aktiv · lokale SQLite-Speicherung'
+        self.message_label.text='GPS-Aufzeichnung aktiv · tractor.db über lokale API'
 
     def _show_event_popup(self,action,manual=False):
         if not self.navigator or self._popup is not None:
@@ -404,12 +451,19 @@ class WorkDashboard(BoxLayout):
                 # Sensor-Zeitstempel verhindert wiederholtes Speichern desselben Fixes.
                 signature=(data.get('timestamp'),float(lat),float(lon))
                 if signature!=self._last_record_signature:
-                    self.gps_store.add(
-                        self.navigator.planning['id'],self.navigator.state.phase,
-                        self.navigator.track['id'],lat,lon,
-                        speed_mps=speed,accuracy_m=data.get('gps_accuracy_m'))
+                    from hashlib import sha256
+                    fix_key=sha256(repr(signature).encode("utf-8")).hexdigest()
+                    payload={"fix_key":fix_key,"phase":self.navigator.state.phase,
+                             "track_id":str(self.navigator.track['id']),
+                             "latitude":float(lat),"longitude":float(lon),
+                             "speed_mps":speed,"accuracy_m":data.get('gps_accuracy_m')}
+                    point=self.api_client.post(
+                        f"/api/work-plannings/{self.navigator.planning['id']}/progress",payload)
                     self._last_record_signature=signature
-                    self._recorded_count+=1
+                    if not any(p.get('fix_key')==fix_key for p in self.progress_points):
+                        self.progress_points.append(point)
+                    self._recorded_count=len(self.progress_points)
+                    self._draw_progress()
             except Exception as exc:
                 self.recording=False
                 self._update_record_button()
