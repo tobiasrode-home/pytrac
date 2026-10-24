@@ -14,6 +14,10 @@ cd /opt
 git clone https://github.com/tobiasrode-home/pytrac
 
 
+cp /opt/pytrac/systemd/* /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable pytrac_backend
+systemctl enable pytrac_kivy
 
 
 
