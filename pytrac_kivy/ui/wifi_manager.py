@@ -2,9 +2,7 @@
 import os
 import re
 import subprocess
-import tempfile
 import threading
-from pathlib import Path
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -63,32 +61,22 @@ def saved_connections():
     return profiles
 
 def connect_wifi(ssid, password, security):
-    """WLAN verbinden; Geheimnis ausschließlich über geschützte Datei.
+    """Kompatibler WLAN-Aufruf auch für ältere nmcli-Versionen.
 
-    `--passwd-file` ist eine GLOBALE nmcli-Option und muss vor `device`
-    stehen. Das bisherige `passwd-file` hinter `connect` war ungültig.
+    Hinweis: `password` wird als Prozessargument an nmcli übergeben.
+    Das ist eine Kompatibilitätslösung; auf gemeinsam genutzten Systemen
+    kann das Passwort während des kurzen Aufrufs in der Prozessliste stehen.
     """
     if not ssid or ssid == "(Verstecktes Netzwerk)":
         raise ValueError("Ungültiger WLAN-Name")
     secure = security not in ("Offen", "", "--")
     if secure and not password:
         raise ValueError("Bitte WLAN-Passwort eingeben.")
-    if "\\n" in password or "\\r" in password:
-        raise ValueError("WLAN-Passwort darf keine Zeilenumbrüche enthalten.")
-    if not secure:
-        return run_command(["nmcli", "device", "wifi", "connect", ssid,
-                            "ifname", INTERFACE], timeout=60)
-    fd, path = tempfile.mkstemp(prefix="pytrac-wifi-")
-    try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as file:
-            file.write("802-11-wireless-security.psk:" + password + "\\n")
-        return run_command(["nmcli", "--passwd-file", path, "device",
-                            "wifi", "connect", ssid, "ifname", INTERFACE],
-                           timeout=60)
-    finally:
-        try: os.unlink(path)
-        except OSError: pass
+    args = ["nmcli", "device", "wifi", "connect", ssid,
+            "ifname", INTERFACE]
+    if secure:
+        args.extend(["password", password])
+    return run_command(args, timeout=60)
 
 class WifiManager(BoxLayout):
     def __init__(self, on_back=None, **kwargs):
