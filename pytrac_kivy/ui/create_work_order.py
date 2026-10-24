@@ -41,7 +41,9 @@ def open_create_work_order(api,choices,on_created):
     preview=FieldEdgePreview(size_hint_y=None,height=dp(290))
     form.add_widget(preview)
     form.add_widget(Label(text="Blau: Ausrichtung  |  Gelb: Start A  |  Rosa: Start B",size_hint_y=None,height=dp(30)))
+    mode=select("Spurmodus",["Gerade Parallelspuren","Grenzgeführte Referenzfahrt"])
     edges=select("Ausrichtungskante",["edge-0"])
+    chain_count=entry("Aufeinanderfolgende Grenzkanten","1",numeric=True)
     start_a=select("Startgrenze A",["edge-1"])
     start_b=select("Startgrenze B",["edge-2"])
     widths=entry("Vorgewende-Breiten","",numeric=True)
@@ -80,7 +82,8 @@ def open_create_work_order(api,choices,on_created):
             payload={"name":name.text.strip(),"tractor_id":tractor["id"],
                      "implement_id":implement["id"],"field_id":field["id"],
                      "turn_type":turn.text,"headland_mode":headland.text,
-                     "bed_working":False,"alignment_boundary_id":edges.text,
+                     "bed_working":False,"guidance_mode":("boundary_reference" if mode.text.startswith("Grenz") else "straight"),
+                     "reference_edge_count":int(float(chain_count.text or "1")),"alignment_boundary_id":edges.text,
                      "start_boundary_a_id":start_a.text,"start_boundary_b_id":start_b.text,
                      "headland_working_widths":int(float(widths.text)) if widths.text.strip() else None,
                      "speed":float(speed.text) if speed.text.strip() else None}

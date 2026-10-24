@@ -48,4 +48,4 @@ def guidance(data: GuidanceRequest, db: Session=Depends(get_db)):
 @router.post('/{planning_id}/guidance')
 def saved_guidance(planning_id: int, data: GuidanceSavedRequest, db: Session=Depends(get_db)):
     """Spurplanung aus gespeicherten Parametern, Modus nur für diese Anfrage."""
-    return run(lambda: service(db).guidance_for_saved(planning_id, data.output_mode, data.implement_lead_m))
+    return run(lambda: service(db).guidance_for_saved(planning_id, data.output_mode, data.implement_lead_m, data.use_recorded_reference))

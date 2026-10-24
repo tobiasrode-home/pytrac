@@ -15,6 +15,8 @@ class WorkPlanning(Base):
     turn_type: Mapped[str] = mapped_column(String(20), nullable=False)
     headland_mode: Mapped[str] = mapped_column(String(30), nullable=False)
     bed_working: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    guidance_mode: Mapped[str] = mapped_column(String(30),default="straight",nullable=False)
+    reference_edge_count: Mapped[int] = mapped_column(Integer,default=1,nullable=False)
     alignment_boundary_id: Mapped[str] = mapped_column(String(30), nullable=False)
     start_boundary_a_id: Mapped[str] = mapped_column(String(30), nullable=False)
     start_boundary_b_id: Mapped[str] = mapped_column(String(30), nullable=False)

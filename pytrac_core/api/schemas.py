@@ -54,6 +54,8 @@ class WorkPlanningBase(BaseModel):
     turn_type: Literal['u_turn','y_turn'] = 'u_turn'
     headland_mode: Literal['all_around','headlands_only'] = 'all_around'
     bed_working: bool = False
+    guidance_mode: Literal['straight','boundary_reference'] = 'straight'
+    reference_edge_count: int = Field(default=1, ge=1, le=100)
     alignment_boundary_id: str = Field(pattern=r'^edge-[0-9]+$')
     start_boundary_a_id: str = Field(pattern=r'^edge-[0-9]+$')
     start_boundary_b_id: str = Field(pattern=r'^edge-[0-9]+$')
@@ -98,5 +100,6 @@ class GuidanceRequest(WorkPlanningPreviewRequest):
 
 
 class GuidanceSavedRequest(BaseModel):
+    use_recorded_reference: bool = False
     output_mode: Literal['turns', 'targets'] = 'turns'
     implement_lead_m: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)

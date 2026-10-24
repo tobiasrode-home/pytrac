@@ -15,6 +15,8 @@
 <label>Vorgewende Stirnseite A (Arbeitsbreiten, optional)<input id="wp-end-a" type="number" min="1" max="100" step="1" placeholder="wie Standard"><span class="muted">Am Anfang der Referenzkanten-Richtung</span></label>
 <label>Vorgewende Stirnseite B (Arbeitsbreiten, optional)<input id="wp-end-b" type="number" min="1" max="100" step="1" placeholder="wie Standard"><span class="muted">Am Ende der Referenzkanten-Richtung; nur bei „Nur an Stirnseiten“ wirksam</span></label>
 <label>Sollgeschwindigkeit (km/h, optional)<input id="wp-speed" type="number" min="0.1" step="any" placeholder="optional"></label>
+<label>Spurmodus<select id="wp-track-mode"><option value="straight">Gerade Parallelspuren</option><option value="boundary_reference">Grenzgeführte Referenzfahrt</option></select></label>
+<label>Aufeinanderfolgende Referenzkanten<input id="wp-reference-edges" type="number" min="1" max="100" step="1" value="1"><span class="muted">Ab der gewählten Ausrichtungskante in Feldgrenzen-Reihenfolge.</span></label>
 <label>Wendemanöver<select id="wp-turn"><option value="u_turn">U-Turn</option><option value="y_turn">Y-Wendung</option></select></label>
 <label>Vorgewende<select id="wp-headland"><option value="all_around">Rund um das Feld</option><option value="headlands_only">Nur an Stirnseiten</option></select></label>
 <label class="wp-check"><input id="wp-bed" type="checkbox"> Feld in Beeten bearbeiten (nur U-Turn)</label>

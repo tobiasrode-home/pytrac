@@ -36,7 +36,13 @@ def open_work_order_dialog(api_client, on_loaded):
                 def worker():
                     try:
                         # 'targets': keine ungeprüften Wendekurven als navigierbare Route.
-                        guidance=api_client.post(f"/api/work-plannings/{selected['id']}/guidance",{'output_mode':'targets'})
+                        use_driven=False
+                        if selected.get('guidance_mode')=='boundary_reference':
+                            progress=api_client.get(f"/api/work-plannings/{selected['id']}/progress")
+                            use_driven=any(p.get('phase')=='main' and str(p.get('track_id'))!='1'
+                                           for p in progress.get('points',[]))
+                        guidance=api_client.post(f"/api/work-plannings/{selected['id']}/guidance",
+                            {'output_mode':'targets','use_recorded_reference':use_driven})
                         field=api_client.get(f"/api/fields/{selected['field_id']}")
                         tractor=api_client.get(f"/api/tractors/{selected['tractor_id']}")
                         implement=api_client.get(f"/api/implements/{selected['implement_id']}")

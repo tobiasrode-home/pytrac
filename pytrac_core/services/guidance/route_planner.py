@@ -37,6 +37,9 @@ class Parameters:
     headland_start_passes: int | None = None
     headland_end_passes: int | None = None
     implement_work_offset_m: float = 0.0
+    guidance_mode: str = "straight"
+    reference_edge_count: int = 1
+    driven_reference: list[list[float]] | None = None
 
 
 def _unit(v):
@@ -231,38 +234,87 @@ def plan_route(params: Parameters) -> dict:
     if stop < start:
         raise GuidanceError("Feld zu schmal für die Fahrspuren.")
     strips=[]
-    for i in range(min(10000,int((stop-start)/width+1e-8)+1)):
-        offset=start+i*width
-        px=origin[0]+normal[0]*offset
-        py=origin[1]+normal[1]*offset
-        line=LineString([(px-u[0]*100000,py-u[1]*100000),(px+u[0]*100000,py+u[1]*100000)])
-        for segment in _segments(usable.intersection(line)):
-            if segment.length < max(0.25,width*0.2):
-                continue
-            a,b=segment.coords[0],segment.coords[-1]
-            if (b[0]-a[0])*u[0]+(b[1]-a[1])*u[1]<0:
-                a,b=b,a
-            if params.headland_mode == "headlands_only":
-                # Abstand an der tatsächlichen, lokalen Stirnseite
-                # der jeweiligen Spur, nicht am globalen Feld-Extremum.
-                # Der seitliche Innenpuffer ist für die Spurmitte
-                # erforderlich und bleibt unverändert.
-                length=math.dist(a,b)
-                # Anfang/Ende beziehen sich auf die Referenzkanten-Richtung u,
-                # nicht auf die wechselnde Fahrtrichtung der einzelnen Spur.
-                if length <= start_margin+end_margin+max(0.25,width*0.2):
+    if params.guidance_mode == "boundary_reference":
+        if not 1 <= params.reference_edge_count < n:
+            raise GuidanceError("Anzahl Referenzkanten ungültig.")
+        # Ausgewählte Kanten müssen in Polygonreihenfolge aufeinanderfolgen.
+        # Die Feldgrenze ist die äußere Null-Linie, die erste befahrbare
+        # Referenzspur liegt eine halbe Arbeitsbreite im Feld.
+        ids=[(params.alignment_edge+j)%n for j in range(params.reference_edge_count+1)]
+        chain=LineString([xy[j] for j in ids])
+        if params.driven_reference:
+            driven=LineString([forward(*point) for point in params.driven_reference])
+            if not driven.is_simple or driven.length < width:
+                raise GuidanceError("Aufgezeichnete Referenzfahrt ist ungeeignet.")
+            base=driven
+            first_distance=0.0
+        else:
+            base=chain
+            first_distance=width/2
+        # Polygonorientierung: bei CCW liegt das Innere links der Kanten.
+        side="left" if signed_area>0 else "right"
+        if params.driven_reference:
+            ca,cb=chain.coords[0],chain.coords[-1]
+            da,db=base.coords[0],base.coords[-1]
+            if (cb[0]-ca[0])*(db[0]-da[0])+(cb[1]-ca[1])*(db[1]-da[1])<0:
+                side="right" if side=="left" else "left"
+        max_dist=polygon.bounds[2]-polygon.bounds[0]+polygon.bounds[3]-polygon.bounds[1]
+        for i in range(min(2000,int(max_dist/width)+2)):
+            distance=first_distance+i*width
+            try:
+                curve=base.parallel_offset(distance,side,join_style=2)
+            except Exception as exc:
+                raise GuidanceError("Referenzkante kann nicht versetzt werden.") from exc
+            segments=_segments(curve.intersection(usable))
+            found=False
+            for segment in segments:
+                if segment.length < max(width,2):continue
+                # Stirnseiten wie bisher um die festgelegten Vorwendebreiten
+                # kürzen, gemessen entlang der jeweiligen Kurvenspur.
+                if params.headland_mode=="headlands_only" and not params.driven_reference:
+                    if segment.length <= start_margin+end_margin+width:continue
+                    from shapely.ops import substring
+                    segment=substring(segment,start_margin,segment.length-end_margin)
+                if segment.length < max(width,2):continue
+                found=True
+                coords=[list(pt) for pt in segment.coords]
+                strips.append({"offset":i,"length_m":round(segment.length,2),"points_m":coords})
+            if i>2 and not found:
+                break
+    else:
+        strips=[]
+        for i in range(min(10000,int((stop-start)/width+1e-8)+1)):
+            offset=start+i*width
+            px=origin[0]+normal[0]*offset
+            py=origin[1]+normal[1]*offset
+            line=LineString([(px-u[0]*100000,py-u[1]*100000),(px+u[0]*100000,py+u[1]*100000)])
+            for segment in _segments(usable.intersection(line)):
+                if segment.length < max(0.25,width*0.2):
                     continue
-                a=(a[0]+u[0]*start_margin,a[1]+u[1]*start_margin)
-                b=(b[0]-u[0]*end_margin,b[1]-u[1]*end_margin)
-            length=math.dist(a,b)
-            if length < max(0.25,width*0.2):
-                continue
-            strips.append({"offset":i,"length_m":round(length,2),"points_m":_xy_line(a,b)})
+                a,b=segment.coords[0],segment.coords[-1]
+                if (b[0]-a[0])*u[0]+(b[1]-a[1])*u[1]<0:
+                    a,b=b,a
+                if params.headland_mode == "headlands_only":
+                    # Abstand an der tatsächlichen, lokalen Stirnseite
+                    # der jeweiligen Spur, nicht am globalen Feld-Extremum.
+                    # Der seitliche Innenpuffer ist für die Spurmitte
+                    # erforderlich und bleibt unverändert.
+                    length=math.dist(a,b)
+                    # Anfang/Ende beziehen sich auf die Referenzkanten-Richtung u,
+                    # nicht auf die wechselnde Fahrtrichtung der einzelnen Spur.
+                    if length <= start_margin+end_margin+max(0.25,width*0.2):
+                        continue
+                    a=(a[0]+u[0]*start_margin,a[1]+u[1]*start_margin)
+                    b=(b[0]-u[0]*end_margin,b[1]-u[1]*end_margin)
+                length=math.dist(a,b)
+                if length < max(0.25,width*0.2):
+                    continue
+                strips.append({"offset":i,"length_m":round(length,2),"points_m":_xy_line(a,b)})
     if not strips:
         raise GuidanceError("Keine regulären Fahrspuren innerhalb des Feldes.")
     corner=Point(xy[corner_index])
     # Wähle die Spur, deren Endpunkt dem gewählten Starteck am nächsten liegt.
-    first=min(strips,key=lambda s:min(corner.distance(Point(s['points_m'][0])),corner.distance(Point(s['points_m'][-1]))))
+    first=(min(strips,key=lambda s:s["offset"]) if params.guidance_mode=="boundary_reference" else min(strips,key=lambda s:min(corner.distance(Point(s['points_m'][0])),corner.distance(Point(s['points_m'][-1])))))
     reverse_first=corner.distance(Point(first['points_m'][-1])) < corner.distance(Point(first['points_m'][0]))
     # Beetbearbeitung: alternierend jede zweite Spur, danach die ausgelassenen.
     by_offset=sorted(strips,key=lambda s:(s['offset'],s['points_m'][0]))
@@ -276,7 +328,7 @@ def plan_route(params: Parameters) -> dict:
     if reverse_first: ordered[0]['points_m'].reverse()
     for i in range(1,len(ordered)):
         prev=ordered[i-1]['points_m'][-1]
-        a,b=ordered[i]['points_m']
+        a,b=ordered[i]['points_m'][0],ordered[i]['points_m'][-1]
         if math.dist(prev,b)<math.dist(prev,a): ordered[i]['points_m'].reverse()
     def wgs(point):
         lon,lat=inverse(*point)
@@ -366,7 +418,7 @@ def plan_route(params: Parameters) -> dict:
                                "coordinates":[wgs(p) for p in segment['coordinates_m']]}
                               for segment in _turns(current,following,params.turn_type,radius)]
         transitions.append(item)
-    return {"headland_tracks":headland_tracks,"headland_implement_events":headland_events,
+    return {"guidance_mode":params.guidance_mode,"reference_edge_count":params.reference_edge_count,"reference_source":("driven" if params.driven_reference else "boundary"),"headland_tracks":headland_tracks,"headland_implement_events":headland_events,
             "headland_track_count":len(headland_tracks),"headland_navigation":"straight_tracks_only_manual_repositioning",
             "implement_events":implement_events,"implement_lead_m":params.implement_lead_m,
             "implement_control":"manual_driver_instruction",

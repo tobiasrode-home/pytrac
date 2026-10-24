@@ -58,6 +58,8 @@ const WP = (() => {
       el('wp-turn').value=plan.turn_type;
       el('wp-headland').value=plan.headland_mode;
       el('wp-bed').checked=Boolean(plan.bed_working);
+      el('wp-track-mode').value=plan.guidance_mode||'straight';
+      el('wp-reference-edges').value=plan.reference_edge_count||1;
       el('wp-bed').disabled=plan.turn_type!=='u_turn';
       el('wp-widths').value=plan.headland_working_widths;
       el('wp-end-a').value=plan.headland_start_passes??'';
@@ -144,6 +146,7 @@ const WP = (() => {
     if(!state.selected.alignment||state.selected.start.length!==2)throw new Error('Ausrichtungskante und zwei Startgrenzen auf der Karte auswählen.');
     const speed=selected('speed').trim();const widths=selected('widths').trim();
     return {name:selected('name').trim(),tractor_id:+selected('tractor'),implement_id:+selected('implement'),field_id:+selected('field'),
+      guidance_mode:el('wp-track-mode').value,reference_edge_count:Number(el('wp-reference-edges').value),
       speed:speed===''?null:Number(speed),turn_type:selected('turn'),headland_mode:selected('headland'),bed_working:el('wp-bed').checked,
       alignment_boundary_id:state.selected.alignment,start_boundary_a_id:state.selected.start[0],start_boundary_b_id:state.selected.start[1],
       headland_working_widths:widths===''?null:Number(widths),

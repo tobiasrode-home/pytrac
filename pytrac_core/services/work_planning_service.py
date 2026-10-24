@@ -178,7 +178,7 @@ class WorkPlanningService:
         self.db.delete(row)
         self.db.commit()
 
-    def guidance(self, data):
+    def guidance(self, data, driven_reference=None):
         """Berechnet die komplette Spurplanung ohne Persistenz des Darstellungsmodus."""
         from pytrac_core.services.guidance.route_planner import Parameters, plan_route, GuidanceError
         tractor, implement, field = self._data(data.tractor_id, data.implement_id, data.field_id)
@@ -204,13 +204,25 @@ class WorkPlanningService:
                 headland_start_passes=data.headland_start_passes,
                 headland_end_passes=data.headland_end_passes,
                 implement_work_offset_m=implement.work_offset_m,
+                guidance_mode=data.guidance_mode,
+                reference_edge_count=data.reference_edge_count,
+                driven_reference=driven_reference,
             ))
         except GuidanceError as exc:
             raise WorkPlanningValidationError(str(exc)) from exc
 
-    def guidance_for_saved(self, planning_id, output_mode='turns', implement_lead_m=0.0):
+    def guidance_for_saved(self, planning_id, output_mode='turns', implement_lead_m=0.0, use_recorded_reference=False):
         """Neu berechnen aus den gespeicherten Planungsparametern."""
         from pytrac_core.api.schemas import GuidanceRequest
         plan = self.get(planning_id)
+        driven=None
+        if plan.guidance_mode == "boundary_reference" and use_recorded_reference:
+            from pytrac_core.persistence.models.work_progress import WorkProgressPoint
+            points=self.db.scalars(select(WorkProgressPoint).where(
+                WorkProgressPoint.planning_id==planning_id,
+                WorkProgressPoint.phase=="main",
+                WorkProgressPoint.track_id=="1").order_by(WorkProgressPoint.recorded_at,WorkProgressPoint.id)).all()
+            if len(points)>=2:
+                driven=[[p.longitude,p.latitude] for p in points]
         return self.guidance(GuidanceRequest(**plan.model_dump(exclude={'id','start_point','created_at'}),
-                                             output_mode=output_mode, implement_lead_m=implement_lead_m))
+                                             output_mode=output_mode, implement_lead_m=implement_lead_m),driven_reference=driven)

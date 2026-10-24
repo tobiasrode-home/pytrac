@@ -171,6 +171,7 @@ class WorkDashboard(BoxLayout):
         self._dismissed_event=None
         self._update_record_button()
         self.navigator=GuidanceNavigator(guidance,planning)
+        self._reference_rebuilt=(guidance.get("reference_source")=="driven")
         self.selection.update(objects)
         self.selection_changed()
         self.order_label.text=f"Arbeit: {planning.get('name','—')}"
@@ -296,6 +297,12 @@ class WorkDashboard(BoxLayout):
 
     def next_track(self):
         if not self.navigator:return
+        nav=self.navigator
+        if (nav.guidance.get('guidance_mode')=='boundary_reference'
+                and nav.state.phase=='main' and nav.state.track_index==0
+                and nav.state.confirmed_raise and not getattr(self,'_reference_rebuilt',False)):
+            self._finish_reference_track()
+            return
         try:
             if not self.navigator.next_track():
                 self.message_label.text='Letzte Spur dieser Phase erreicht'
@@ -305,6 +312,35 @@ class WorkDashboard(BoxLayout):
                 self._dismissed_event=None
             self._update_track_display()
         except ValueError as exc:self.message_label.text=str(exc)
+
+    def _finish_reference_track(self):
+        """Abgeschlossene erste Fahrt als tatsächliche Referenz übernehmen."""
+        nav=self.navigator
+        planning_id=nav.planning['id']
+        self.message_label.text='Referenzfahrt wird übernommen …'
+        def worker():
+            try:
+                guidance=self.api_client.post(
+                    f'/api/work-plannings/{planning_id}/guidance',
+                    {'output_mode':'targets','use_recorded_reference':True})
+                if guidance.get('reference_source')!='driven':
+                    raise ValueError('Mindestens zwei GPS-Punkte auf Spur 1 erforderlich')
+                Clock.schedule_once(lambda _dt:self._apply_driven_reference(planning_id,guidance))
+            except Exception as exc:
+                Clock.schedule_once(lambda _dt,msg=str(exc):setattr(self.message_label,'text',
+                    'Referenzfahrt konnte nicht übernommen werden: '+msg))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _apply_driven_reference(self,planning_id,guidance):
+        if not self.navigator or self.navigator.planning['id']!=planning_id:return
+        nav=self.navigator
+        nav.guidance=guidance
+        self._reference_rebuilt=True
+        if nav.next_track():
+            self.message_label.text='Folgespuren aus tatsächlicher Referenzfahrt berechnet'
+        else:
+            self.message_label.text='Keine weitere Spur vorhanden'
+        self._update_track_display()
 
     def previous_track(self):
         if not self.navigator:return
