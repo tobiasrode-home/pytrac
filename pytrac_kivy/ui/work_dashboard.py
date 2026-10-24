@@ -122,7 +122,7 @@ class WorkDashboard(BoxLayout):
             ('Nächste Spur',self.next_track),
         ):
             footer.add_widget(self._button(title,callback))
-        self.record_button=self._button('Aufzeichnung starten',self.toggle_recording)
+        self.record_button=Label(text='GPS: pausiert',font_size='14sp',size_hint_x=1)
         footer.add_widget(self.record_button)
         self.update_selection()
         self._refresh_event=Clock.schedule_interval(lambda _dt:self.refresh(),self.refresh_interval)
@@ -291,26 +291,9 @@ class WorkDashboard(BoxLayout):
         except ValueError as exc:self.message_label.text=str(exc)
 
     def _update_record_button(self):
-        self.record_button.text=('Aufzeichnung pausieren' if self.recording
-                                 else 'Aufzeichnung starten')
-
-    def toggle_recording(self):
-        """Aufzeichnung in der UI aktivieren/pausieren; keine Datenpersistenz."""
-        if not self.navigator:
-            self.message_label.text='Zuerst einen Arbeitsauftrag laden'
-            return
-        if self.recording:
-            self.recording=False
-            self._update_record_button()
-            self.message_label.text=f'Aufzeichnung pausiert · {self._recorded_count} GPS-Punkte dauerhaft gespeichert'
-            return
-        if not self.navigator.state.active:
-            self.message_label.text='Zum Starten am Absenkpunkt Gerät bestätigen'
-            self._show_event_popup('lower',manual=True)
-            return
-        self.recording=True
-        self._update_record_button()
-        self.message_label.text='GPS-Aufzeichnung aktiv · tractor.db über lokale API'
+        """Nur Statusanzeige: Start/Stopp erfolgen über Gerätebestätigung."""
+        self.record_button.text=('GPS: Aufnahme läuft' if self.recording
+                                 else 'GPS: pausiert')
 
     def _show_event_popup(self,action,manual=False):
         if not self.navigator or self._popup is not None:
@@ -467,7 +450,7 @@ class WorkDashboard(BoxLayout):
             except Exception as exc:
                 self.recording=False
                 self._update_record_button()
-                self.message_label.text=f'GPS-Speicherfehler: {exc}'
+                self.message_label.text=f'GPS-Speicherfehler: {exc} · nach Fehlerbehebung erneut Absenken bestätigen'
         if self.navigator:
             fix=self.navigator.update(lon,lat,gps_valid=valid) if valid else self.navigator.update(0,0,gps_valid=False)
             if fix:
