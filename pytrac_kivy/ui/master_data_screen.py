@@ -14,6 +14,7 @@ from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from pytrac_kivy.ui.keyboard import TouchKeyboard
+from pytrac_kivy.ui.fullscreen_keyboard import open_fullscreen_keyboard
 
 GPS_POLL_INTERVAL = 1.0
 MIN_POINT_DISTANCE_M = 2.0
@@ -248,7 +249,10 @@ class MasterDataScreen(BoxLayout):
         name_input = TextInput(hint_text="Feldname, z. B. Nordschlag", multiline=False,
                                size_hint_y=None, height=dp(52), write_tab=False)
         keyboard_container = BoxLayout(orientation="vertical", size_hint_y=None, height=0)
-        self.attach_touch_keyboard(name_input, keyboard_container)
+        # Feldname bekommt eine bildschirmfüllende Tastatur mit Eingabeanzeige oben.
+        name_input.bind(on_touch_down=lambda instance,touch:
+                        open_fullscreen_keyboard(instance,"Feldname eingeben")
+                        if instance.collide_point(*touch.pos) else None)
         content.add_widget(name_input)
         content.add_widget(Widget(size_hint_y=None, height=dp(80)))
         content.add_widget(keyboard_container)
