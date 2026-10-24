@@ -225,12 +225,12 @@ class WorkPlanningService:
                 WorkProgressPoint.track_id=="1").order_by(WorkProgressPoint.recorded_at,WorkProgressPoint.id)).all()
             if len(points)>=2:
                 driven=[[p.longitude,p.latitude] for p in points]
-        result=self.guidance(GuidanceRequest(**plan.model_dump(exclude={'id','start_point','created_at'}),
-                                             output_mode=output_mode, implement_lead_m=implement_lead_m),driven_reference=driven)
         saved=self.db.execute(text('SELECT tracks_json FROM work_planning_manual_tracks WHERE planning_id=:id'),
                               {'id':planning_id}).scalar_one_or_none()
         if saved:
             from pytrac_core.services.guidance.route_planner import manual_track_guidance
             implement=self.db.get(Implement,plan.implement_id)
-            result=manual_track_guidance(result,json.loads(saved),implement.work_offset_m,implement_lead_m)
+            return manual_track_guidance({},json.loads(saved),implement.work_offset_m,implement_lead_m)
+        result=self.guidance(GuidanceRequest(**plan.model_dump(exclude={'id','start_point','created_at'}),
+                                             output_mode=output_mode, implement_lead_m=implement_lead_m),driven_reference=driven)
         return result

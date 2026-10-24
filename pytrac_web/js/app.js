@@ -91,7 +91,7 @@ function showSection(section){
   document.querySelectorAll('nav [data-section]').forEach(button=>button.classList.toggle('active',button.dataset.section===section));
   closeEditor();clearNotice();
   if(configs[section])loadAll();
-  if(section==='work-planning'&&typeof WP!=='undefined')WP.show();
+  if(section==='work-planning'&&typeof MP!=='undefined')MP.show();
   if(section==='work-history'&&typeof WH!=='undefined')WH.show();
 }
 document.querySelectorAll('nav [data-section]').forEach(button=>button.addEventListener('click',()=>showSection(button.dataset.section)));

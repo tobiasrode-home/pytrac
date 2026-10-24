@@ -588,6 +588,12 @@ def manual_track_guidance(result, lines, implement_offset_m=0.0, lead_m=0.0):
                 wlon,wlat,_=geod.fwd(lon,lat,azimuth,-lead_m)
                 event['advance_warning']=[wlon,wlat]
             events.append(event)
+    result['headland_tracks']=[]
+    result['headland_implement_events']=[]
+    result['headland_track_count']=0
+    result['headland_navigation']='manual'
+    result['guidance_mode']='manual'
+    result['implement_control']='manual_driver_instruction'
     result['tracks']=tracks
     result['track_count']=len(tracks)
     result['work_length_m']=round(sum(t['length_m'] for t in tracks),2)
@@ -596,5 +602,8 @@ def manual_track_guidance(result, lines, implement_offset_m=0.0, lead_m=0.0):
     result['transitions']=[{'from_track':i,'to_track':i+1,'target':tracks[i]['coordinates'][0],
                             'mode':'targets','segments':[]} for i in range(1,len(tracks))]
     result['reference_source']='manual'
+    result['output_mode']='targets'
+    result['turns_collision_checked']=False
+    result['turns_kinematically_validated']=False
     result['warnings']=list(result.get('warnings',[]))+['Manuelle Spuren: Wendemanöver nicht berechnet. Geräteaktionen müssen bestätigt werden.']
     return result
