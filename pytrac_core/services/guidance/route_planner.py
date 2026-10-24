@@ -12,7 +12,7 @@ from typing import Literal
 
 from pyproj import CRS, Transformer
 from shapely.geometry import LineString, Point, Polygon
-from shapely.ops import transform
+from shapely.ops import transform, unary_union
 
 
 class GuidanceError(ValueError):
@@ -57,31 +57,23 @@ def _segments(geometry):
     return [g for g in getattr(geometry, "geoms", ()) if g.geom_type == "LineString"]
 
 
-def _extend_offset_ends(geometry, extension):
-    """Verlängert NUR die Enden der fertigen Parallelspur tangential.
+def _headland_cut_halfplane(a, b, inward, clearance, extent):
+    """Half-plane behind a real headland edge, offset into the field.
 
-    Die ursprüngliche Referenzlinie bleibt unverändert. Dadurch entstehen
-    keine neuen Knicke durch versetzte, künstlich verlängerte Grenzkanten.
+    Uses a large finite polygon in the local metric CRS. Unlike shortening
+    a curve by its arclength, this makes all tracks end at the SAME physical
+    headland boundary, even if the boundary is oblique.
     """
-    def extend(line):
-        coords=list(line.coords)
-        if len(coords)<2:
-            return line
-        start=next((p for p in coords[1:] if math.dist(p,coords[0])>1e-6),None)
-        end=next((p for p in reversed(coords[:-1]) if math.dist(p,coords[-1])>1e-6),None)
-        if start is None or end is None:
-            return line
-        u=_unit((start[0]-coords[0][0],start[1]-coords[0][1]))
-        v=_unit((coords[-1][0]-end[0],coords[-1][1]-end[1]))
-        return LineString([(coords[0][0]-u[0]*extension,coords[0][1]-u[1]*extension),
-                           *coords,
-                           (coords[-1][0]+v[0]*extension,coords[-1][1]+v[1]*extension)])
-    if geometry.geom_type=="LineString":
-        return extend(geometry)
-    from shapely.geometry import MultiLineString
-    if geometry.geom_type=="MultiLineString":
-        return MultiLineString([extend(line) for line in geometry.geoms])
-    return geometry
+    u = _unit((b[0] - a[0], b[1] - a[1]))
+    n = (-u[1], u[0])
+    if n[0]*inward[0] + n[1]*inward[1] < 0:
+        n = (-n[0], -n[1])
+    x, y = a[0]+n[0]*clearance, a[1]+n[1]*clearance
+    p = (x-u[0]*extent, y-u[1]*extent)
+    q = (x+u[0]*extent, y+u[1]*extent)
+    return Polygon([p, q,
+        (q[0]+n[0]*extent, q[1]+n[1]*extent),
+        (p[0]+n[0]*extent, p[1]+n[1]*extent)])
 
 
 def _xy_line(a, b):
@@ -286,26 +278,75 @@ def plan_route(params: Parameters) -> dict:
             if (cb[0]-ca[0])*(db[0]-da[0])+(cb[1]-ca[1])*(db[1]-da[1])<0:
                 side="right" if side=="left" else "left"
         max_dist=polygon.bounds[2]-polygon.bounds[0]+polygon.bounds[3]-polygon.bounds[1]
+        # The preceding and following polygon edges are the two actual
+        # headland boundaries for a chain of consecutive reference edges.
+        # Clip the tracks to parallel lines set one headland width INSIDE
+        # those edges, instead of removing an arbitrary arclength.
+        # For boundary-derived offsets, clipping against polygon.buffer(-5m)
+        # can truncate a curved outermost line at a bend. The offset itself
+        # already provides the 5m clearance from the chosen reference edge.
+        reference_usable=polygon if not params.driven_reference else usable
+        if params.headland_mode == "headlands_only" and not params.driven_reference:
+            before=(params.alignment_edge-1)%n
+            after=(params.alignment_edge+params.reference_edge_count)%n
+            # For a valid simple polygon, the polygon interior is on the
+            # left for CCW and on the right for CW winding.
+            extent=max(1000.,max_dist*20)
+            for edge_id,clearance in ((before,start_margin),(after,end_margin)):
+                a,b=xy[edge_id],xy[(edge_id+1)%n]
+                direction=_unit((b[0]-a[0],b[1]-a[1]))
+                inward=(-direction[1],direction[0])
+                if signed_area<0:inward=(-inward[0],-inward[1])
+                reference_usable=reference_usable.intersection(
+                    _headland_cut_halfplane(a,b,inward,clearance,extent))
         for i in range(min(2000,int(max_dist/width)+2)):
             distance=first_distance+i*width
+            # Avoid exact coincidence with the lateral buffer boundary;
+            # the 1 cm numerical tolerance is used for the FIRST track only.
+            if i == 0 and not params.driven_reference:
+                distance += 0.01
             try:
                 curve=base.parallel_offset(distance,side,join_style=2)
             except Exception as exc:
                 raise GuidanceError("Referenzkante kann nicht versetzt werden.") from exc
-            # Erst parallel versetzen, DANN jede fertige Spur bis zur
-            # Feld-/Vorgewendegrenze verlängern. Nicht die Referenzkette
-            # selbst verlängern (das erzeugte in V34 die Treppen).
-            curve=_extend_offset_ends(curve,max(100.,max_dist*2))
-            segments=_segments(curve.intersection(usable))
+            # Fertige Offset-Linie an ihren Enden geradlinig bis zu den
+            # tatsächlichen Stirnseiten verlängern. Die innere Geometrie
+            # und alle Knicke bleiben unverändert; anschließend begrenzt
+            # reference_usable die Spur am Vorgewende.
+            if not params.driven_reference and curve.geom_type == "LineString":
+                pts=list(curve.coords)
+                if len(pts)>=2:
+                    reach=max(30.,max_dist)
+                    a,b=pts[0],pts[1]
+                    c,d=pts[-2],pts[-1]
+                    ua=_unit((b[0]-a[0],b[1]-a[1]))
+                    ub=_unit((d[0]-c[0],d[1]-c[1]))
+                    curve=LineString([(a[0]-ua[0]*reach,a[1]-ua[1]*reach),
+                                      *pts,
+                                      (d[0]+ub[0]*reach,d[1]+ub[1]*reach)])
+            # Die Spurmitte muss mindestens eine halbe Arbeitsbreite
+            # Abstand zu ALLEN seitlichen Feldgrenzen haben. Die
+            # Stirnseiten werden weiterhin separat durch die
+            # Vorgewende-Halbebenen begrenzt.
+            # Nur die gegenüberliegende (linke) Feldseite als
+            # Sicherheitsabstand anwenden. Ein globaler Innenpuffer
+            # würde die rechte Referenzspur am Knick erneut abschneiden.
+            opposite=(params.alignment_edge+params.reference_edge_count+1)%n
+            # Gegenüberliegende Seitenkette: alle Kanten außer der
+            # Referenzkette und den beiden Stirnseiten.
+            excluded={(params.alignment_edge+j)%n for j in range(params.reference_edge_count)}
+            excluded.add((params.alignment_edge-1)%n)
+            excluded.add((params.alignment_edge+params.reference_edge_count)%n)
+            forbidden=unary_union([
+                LineString([xy[j],xy[(j+1)%n]]).buffer(width/2-0.01)
+                for j in range(n) if j not in excluded])
+            safe_area=reference_usable.difference(forbidden)
+            segments=_segments(curve.intersection(safe_area))
             found=False
             for segment in segments:
                 if segment.length < max(width,2):continue
                 # Stirnseiten wie bisher um die festgelegten Vorwendebreiten
                 # kürzen, gemessen entlang der jeweiligen Kurvenspur.
-                if params.headland_mode=="headlands_only" and not params.driven_reference:
-                    if segment.length <= start_margin+end_margin+width:continue
-                    from shapely.ops import substring
-                    segment=substring(segment,start_margin,segment.length-end_margin)
                 if segment.length < max(width,2):continue
                 found=True
                 coords=[list(pt) for pt in segment.coords]
