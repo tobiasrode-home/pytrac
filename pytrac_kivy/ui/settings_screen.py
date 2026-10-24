@@ -7,10 +7,9 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.slider import Slider
 from kivy.uix.textinput import TextInput
 from pytrac_kivy.ui.display_brightness import read_brightness, set_brightness
-from pytrac_kivy.ui.fullscreen_keyboard import open_fullscreen_keyboard
+from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
 from pytrac_kivy.ui.work_order_dialog import open_work_order_dialog
 
 class SettingsScreen(BoxLayout):
@@ -46,27 +45,28 @@ class SettingsScreen(BoxLayout):
         self.status_label=Label(text='Lade Auswahlmöglichkeiten …',size_hint_y=None,height=dp(42))
         self.add_widget(self.status_label)
         brightness=read_brightness()
-        brightness_row=BoxLayout(size_hint_y=None,height=dp(55),spacing=dp(8))
-        brightness_row.add_widget(Label(text="Displayhelligkeit",size_hint_x=None,width=dp(170)))
-        self.brightness_slider=Slider(min=10,max=100,value=brightness if brightness is not None else 70)
-        self.brightness_slider.disabled=brightness is None
-        brightness_row.add_widget(self.brightness_slider)
-        self.brightness_label=Label(text=(str(brightness)+" %" if brightness is not None else "Nicht verfügbar"),
-                                    size_hint_x=None,width=dp(130))
-        brightness_row.add_widget(self.brightness_label)
+        brightness_row=BoxLayout(size_hint_y=None,height=dp(60),spacing=dp(8))
+        brightness_row.add_widget(Label(text="Displayhelligkeit",size_hint_x=None,width=dp(160)))
+        self.brightness_buttons={}
+        for level in (25,50,75,100):
+            button=self.make_button(f"{level} %",lambda _btn,level=level:self.set_display_brightness(level))
+            button.disabled=brightness is None
+            brightness_row.add_widget(button)
+            self.brightness_buttons[level]=button
         self.add_widget(brightness_row)
-        self.brightness_slider.bind(on_touch_up=self._brightness_touch_up)
+        self.brightness_label=Label(text=(f"Aktuell: {brightness} %" if brightness is not None else
+                                          "Displayhelligkeit nicht verfügbar"),
+                                    size_hint_y=None,height=dp(28))
+        self.add_widget(self.brightness_label)
         self.add_widget(BoxLayout(size_hint_y=1))
         self.load_choices()
-    def _brightness_touch_up(self, slider, touch):
-        if not slider.collide_point(*touch.pos) or slider.disabled:
-            return
-        value=round(slider.value)
+
+    def set_display_brightness(self,value):
         try:
             set_brightness(value)
-            self.brightness_label.text=f"{value} %"
-        except RuntimeError as exc:
-            self.brightness_label.text="Nicht möglich"
+            self.brightness_label.text=f"Aktuell: {value} %"
+        except (RuntimeError,ValueError) as exc:
+            self.brightness_label.text="Helligkeit konnte nicht geändert werden"
             self.status_label.text=str(exc)
 
     @staticmethod
@@ -110,8 +110,7 @@ class SettingsScreen(BoxLayout):
             search=TextInput(hint_text="Feldname suchen – antippen für Vollbildtastatur",
                              multiline=False,size_hint_y=None,height=dp(55))
             content.add_widget(search)
-            search.bind(on_touch_down=lambda instance,touch:
-                        open_fullscreen_keyboard(instance,"Feldname suchen") if instance.collide_point(*touch.pos) else None)
+            bind_fullscreen_keyboard(search,"Feldname suchen")
             def filter_fields(_instance,query):
                 rows.clear_widgets()
                 for item in items:

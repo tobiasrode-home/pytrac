@@ -15,6 +15,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from pytrac_kivy.ui.keyboard import TouchKeyboard
+from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
 
 INTERFACE = "wlan0"
 
@@ -165,25 +166,8 @@ class WifiManager(BoxLayout):
         buttons = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
         popup = Popup(title="WLAN verbinden", content=content, size_hint=(0.96, None),
                       height=dp(190), auto_dismiss=False)
-        def finish_password_entry():
-            keyboard_container.clear_widgets()
-            keyboard_container.height = 0
-            popup.height = dp(190)
-            password_input.focus = False
-        def password_focus_changed(instance, focused):
-            # Beim Drücken eines virtuellen Buttons verliert das TextInput
-            # den Fokus. Weder beim Verlust noch beim erneuten Fokussieren
-            # darf die Tastatur entfernt oder neu aufgebaut werden.
-            if not focused or security in ("Offen", "", "--"):
-                return
-            if keyboard_container.children:
-                return
-            keyboard_container.height = dp(210)
-            popup.height = dp(425)
-            keyboard_container.add_widget(TouchKeyboard(
-                target=password_input, on_done=finish_password_entry
-            ))
-        password_input.bind(focus=password_focus_changed)
+        if security not in ("Offen", "", "--"):
+            bind_fullscreen_keyboard(password_input,"WLAN-Passwort eingeben")
         cancel = Button(text="Abbrechen")
         cancel.bind(on_release=popup.dismiss)
         buttons.add_widget(cancel)
@@ -203,8 +187,7 @@ class WifiManager(BoxLayout):
             self.run_async(lambda: connect_wifi(ssid, password, security), finished)
         connect.bind(on_release=do_connect)
         popup.open()
-        if security not in ("Offen", "", "--"):
-            Clock.schedule_once(lambda _dt: setattr(password_input, "focus", True), 0.15)
+
 
     def show_profiles(self):
         def update(profiles, error):
