@@ -178,6 +178,9 @@ class WifiManager(BoxLayout):
         popup = Popup(title="WLAN verbinden", content=content, size_hint=(0.96, None),
                       height=dp(190), auto_dismiss=False)
         def finish_password_entry():
+            keyboard_container.clear_widgets()
+            keyboard_container.height = 0
+            popup.height = dp(190)
             password_input.focus = False
         def password_focus_changed(instance, focused):
             keyboard_container.clear_widgets()
@@ -186,8 +189,8 @@ class WifiManager(BoxLayout):
                 popup.height = dp(425)
                 keyboard_container.add_widget(TouchKeyboard(target=password_input, on_done=finish_password_entry))
             else:
-                keyboard_container.height = 0
-                popup.height = dp(190)
+                # Tastendruck auf die virtuelle Tastatur darf sie nicht schließen.
+                pass
         password_input.bind(focus=password_focus_changed)
         cancel = Button(text="Abbrechen")
         cancel.bind(on_release=popup.dismiss)

@@ -1,8 +1,6 @@
-"""PyTrac: Eigenständige Seite zur Erfassung neuer Stammdaten."""
-
+"""PyTrac: Stammdaten verwalten, Touch-Tastatur mit stabilem Fokus (V17)."""
 import math
 import threading
-
 import requests
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -15,77 +13,44 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
-
 from pytrac_kivy.ui.keyboard import TouchKeyboard
 
 GPS_POLL_INTERVAL = 1.0
 MIN_POINT_DISTANCE_M = 2.0
 
-
 class MasterDataScreen(BoxLayout):
-    """Traktoren, Anbaugeräte und Felder unabhängig erfassen."""
-
-    def __init__(
-        self, api_url, selection, api_client=None, on_back=None,
-        on_selection_changed=None, **kwargs
-    ):
-        super().__init__(
-            orientation="vertical", padding=dp(18), spacing=dp(12), **kwargs
-        )
+    def __init__(self, api_url, selection, api_client=None, on_back=None,
+                 on_selection_changed=None, **kwargs):
+        super().__init__(orientation="vertical", padding=dp(18), spacing=dp(12), **kwargs)
         self.api_url = api_url.rstrip("/")
         self.api_client = api_client
         self.selection = selection
         self.on_back = on_back
         self.on_selection_changed = on_selection_changed
         self.choices = {"tractor": [], "implement": [], "field": []}
-
-        header = BoxLayout(
-            orientation="horizontal", size_hint_y=None,
-            height=dp(64), spacing=dp(12)
-        )
-        header.add_widget(Label(
-            text="[b]Stammdaten verwalten[/b]", markup=True,
-            font_size="24sp", halign="left"
-        ))
-        header.add_widget(self.make_button(
-            "Zurück", self.go_back, width=dp(170)
-        ))
+        header = BoxLayout(orientation="horizontal", size_hint_y=None,
+                           height=dp(64), spacing=dp(12))
+        header.add_widget(Label(text="[b]Stammdaten verwalten[/b]", markup=True,
+                                font_size="24sp", halign="left"))
+        header.add_widget(self.make_button("Zurück", self.go_back, width=dp(170)))
         self.add_widget(header)
-        self.add_widget(Label(
-            text="Wähle aus, welche Stammdaten du neu erfassen möchtest.",
-            size_hint_y=None, height=dp(60), halign="left", valign="middle"
-        ))
-        self.add_widget(self.make_button(
-            "Traktor anlegen", lambda *_: self.open_form("tractor"),
-            height=dp(76)
-        ))
-        self.add_widget(self.make_button(
-            "Anbaugerät anlegen", lambda *_: self.open_form("implement"),
-            height=dp(76)
-        ))
-        self.add_widget(self.make_button(
-            "Feld per GPS erfassen", lambda *_: self.open_field_capture(),
-            height=dp(76)
-        ))
-        self.add_widget(Label(
-            text="Felder werden durch Abfahren der Feldgrenze mit dem GPS "
-                 "des Pico erfasst.",
-            size_hint_y=None, height=dp(56), halign="left", valign="middle"
-        ))
-        self.status_label = Label(
-            text="Bereit zur Stammdatenerfassung.",
-            size_hint_y=None, height=dp(48)
-        )
+        self.add_widget(Label(text="Wähle aus, welche Stammdaten du neu erfassen möchtest.",
+                              size_hint_y=None, height=dp(60), halign="left", valign="middle"))
+        self.add_widget(self.make_button("Traktor anlegen", lambda *_: self.open_form("tractor"), height=dp(76)))
+        self.add_widget(self.make_button("Anbaugerät anlegen", lambda *_: self.open_form("implement"), height=dp(76)))
+        self.add_widget(self.make_button("Feld per GPS erfassen", lambda *_: self.open_field_capture(), height=dp(76)))
+        self.add_widget(Label(text="Felder werden durch Abfahren der Feldgrenze mit dem GPS des Pico erfasst.",
+                              size_hint_y=None, height=dp(56), halign="left", valign="middle"))
+        self.status_label = Label(text="Bereit zur Stammdatenerfassung.",
+                                  size_hint_y=None, height=dp(48))
         self.add_widget(self.status_label)
         self.add_widget(Widget(size_hint_y=1))
 
     def make_button(self, text, callback, height=dp(54), width=None):
-        button = Button(
-            text=text, size_hint_y=None, height=height,
-            background_normal="", background_down="",
-            background_color=(0.16, 0.43, 0.28, 1),
-            color=(1, 1, 1, 1), font_size="17sp", bold=True
-        )
+        button = Button(text=text, size_hint_y=None, height=height,
+                        background_normal="", background_down="",
+                        background_color=(0.16, 0.43, 0.28, 1),
+                        color=(1, 1, 1, 1), font_size="17sp", bold=True)
         if width is not None:
             button.size_hint_x = None
             button.width = width
@@ -95,81 +60,71 @@ class MasterDataScreen(BoxLayout):
     def request(self, path, method="GET", payload=None):
         if self.api_client is not None:
             return self.api_client.request(path, method=method, payload=payload)
-        response = requests.request(
-            method, self.api_url + path, json=payload, timeout=8
-        )
+        response = requests.request(method, self.api_url + path, json=payload, timeout=8)
         response.raise_for_status()
         return response.json() if response.content else {}
 
     def attach_touch_keyboard(self, text_input, keyboard_container):
-        """Bindet die Bildschirmtastatur an ein TextInput."""
-        def show_keyboard(instance, focused):
-            keyboard_container.clear_widgets()
-            if not focused:
-                keyboard_container.height = 0
-                return
-            keyboard_container.height = dp(210)
-            numeric = getattr(instance, "input_filter", None) == "float"
-            keyboard_container.add_widget(TouchKeyboard(
-                target=instance, numeric=numeric,
-                on_done=lambda: finish_input(instance)
-            ))
-
+        """Bei Fokusverlust durch Tastendruck offen halten; FERTIG schließt."""
+        state = {"keyboard": None}
         def finish_input(instance):
-            instance.focus = False
             keyboard_container.clear_widgets()
             keyboard_container.height = 0
+            state["keyboard"] = None
+            instance.focus = False
+
+        def show_keyboard(instance, focused):
+            if not focused:
+                # Ein virtueller Button übernimmt Kivy-Fokus. Nicht schließen!
+                return
+            current = state["keyboard"]
+            if current is not None and current.parent is keyboard_container:
+                return
+            keyboard_container.clear_widgets()
+            keyboard_container.height = dp(210)
+            numeric = getattr(instance, "input_filter", None) == "float"
+            keyboard = TouchKeyboard(target=instance, numeric=numeric,
+                                     on_done=lambda: finish_input(instance))
+            state["keyboard"] = keyboard
+            keyboard_container.add_widget(keyboard)
 
         text_input.bind(focus=show_keyboard)
 
     def load_choices(self, on_loaded=None):
-        """Lädt Stammdaten; optionaler Callback läuft nach dem Laden im UI-Thread."""
         def worker():
             try:
-                choices = {
-                    "tractor": self.request("/api/tractors"),
-                    "implement": self.request("/api/implements"),
-                    "field": self.request("/api/fields"),
-                }
+                choices = {kind: self.request(endpoint) for kind, endpoint in
+                           (("tractor", "/api/tractors"),
+                            ("implement", "/api/implements"),
+                            ("field", "/api/fields"))}
                 Clock.schedule_once(lambda _dt: apply_choices(choices))
             except Exception as exc:
                 message = str(exc)
                 Clock.schedule_once(lambda _dt: setattr(
-                    self.status_label, "text", "Laden fehlgeschlagen: " + message
-                ))
-
+                    self.status_label, "text", "Laden fehlgeschlagen: " + message))
         def apply_choices(choices):
             self.choices = choices
             self.status_label.text = (
                 f'{len(choices["tractor"])} Traktoren · '
                 f'{len(choices["implement"])} Anbaugeräte · '
-                f'{len(choices["field"])} Felder'
-            )
+                f'{len(choices["field"])} Felder')
             if on_loaded:
                 on_loaded(choices)
-
         threading.Thread(target=worker, daemon=True).start()
 
     def select_created(self, kind, created):
-        """Übernimmt einen neuen Datensatz in die gemeinsame Auswahl."""
-        items = self.choices.get(kind, [])
-        selected = next(
-            (item for item in items if item.get("id") == created.get("id")),
-            created,
-        )
+        selected = next((item for item in self.choices.get(kind, [])
+                         if item.get("id") == created.get("id")), created)
         self.selection[kind] = selected
         if self.on_selection_changed:
             self.on_selection_changed()
 
     def _reload_and_select(self, kind, created):
-        """Erst neu laden, dann auswählen – ohne feste Zeitverzögerung."""
         def loaded(_choices):
             self.select_created(kind, created)
             area = float(created.get("area_m2", 0.0)) / 10000.0
             suffix = f" · {area:.3f} ha" if kind == "field" else ""
-            self.status_label.text = (
-                f'Gespeichert: {created.get("name", "Unbekannt")}{suffix}'
-            )
+            self.status_label.text = f'Gespeichert: {created.get("name", "Unbekannt")}{suffix}'
         self.load_choices(on_loaded=loaded)
 
     def open_form(self, kind):
@@ -199,39 +154,29 @@ class MasterDataScreen(BoxLayout):
             self.status_label.text = f"Unbekannter Erfassungstyp: {kind}"
             return
 
-        content = BoxLayout(
-            orientation="vertical", spacing=dp(8), padding=dp(12)
-        )
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
         scroll = ScrollView(do_scroll_x=False, do_scroll_y=True)
         form = GridLayout(cols=2, spacing=dp(8), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
-        keyboard_container = BoxLayout(
-            orientation="vertical", size_hint_y=None, height=0
-        )
+        keyboard_container = BoxLayout(orientation="vertical", size_hint_y=None, height=0)
         inputs = {}
-
         for key, label_text, input_type, default in fields:
-            form.add_widget(Label(
-                text=label_text, size_hint_y=None, height=dp(46),
-                halign="left", valign="middle"
-            ))
+            form.add_widget(Label(text=label_text, size_hint_y=None, height=dp(46),
+                                  halign="left", valign="middle"))
             if input_type == "choice":
                 widget = Spinner(
                     text={"front": "Vorne", "rear": "Hinten", "towed": "Gezogen"}.get(default, "Hinten"),
                     values=("Vorne", "Hinten", "Gezogen"),
-                    size_hint_y=None, height=dp(46)
-                )
+                    size_hint_y=None, height=dp(46))
             else:
                 widget = TextInput(
                     text=default or "", hint_text=label_text, multiline=False,
                     input_filter="float" if input_type == "number" else None,
-                    size_hint_y=None, height=dp(46), write_tab=False
-                )
+                    size_hint_y=None, height=dp(46), write_tab=False)
             inputs[key] = widget
             form.add_widget(widget)
             if isinstance(widget, TextInput):
                 self.attach_touch_keyboard(widget, keyboard_container)
-
         scroll.add_widget(form)
         content.add_widget(scroll)
         content.add_widget(keyboard_container)
@@ -244,12 +189,15 @@ class MasterDataScreen(BoxLayout):
         buttons.add_widget(self.make_button("Abbrechen", lambda *_: close_form()))
         content.add_widget(buttons)
 
-        def close_form():
+        def hide_keyboard():
+            keyboard_container.clear_widgets()
+            keyboard_container.height = 0
             for widget in inputs.values():
                 if isinstance(widget, TextInput):
                     widget.focus = False
-            keyboard_container.clear_widgets()
-            keyboard_container.height = 0
+
+        def close_form():
+            hide_keyboard()
             popup.dismiss()
 
         def save():
@@ -258,9 +206,8 @@ class MasterDataScreen(BoxLayout):
                 for key, label_text, input_type, _default in fields:
                     widget = inputs[key]
                     if input_type == "choice":
-                        payload[key] = {
-                            "Vorne": "front", "Hinten": "rear", "Gezogen": "towed"
-                        }[widget.text]
+                        payload[key] = {"Vorne": "front", "Hinten": "rear",
+                                        "Gezogen": "towed"}[widget.text]
                     elif input_type == "number":
                         value = widget.text.strip().replace(",", ".")
                         if not value:
@@ -276,15 +223,9 @@ class MasterDataScreen(BoxLayout):
             except (ValueError, KeyError) as exc:
                 status.text = str(exc)
                 return
-
             save_button.disabled = True
             status.text = "Speichere …"
-            for widget in inputs.values():
-                if isinstance(widget, TextInput):
-                    widget.focus = False
-            keyboard_container.clear_widgets()
-            keyboard_container.height = 0
-
+            hide_keyboard()
             def worker():
                 try:
                     created = self.request(endpoint, method="POST", payload=payload)
@@ -292,43 +233,31 @@ class MasterDataScreen(BoxLayout):
                 except Exception as exc:
                     message = str(exc)
                     Clock.schedule_once(lambda _dt: failed(message))
-
             def saved(created):
                 popup.dismiss()
                 self.status_label.text = "Gespeichert: " + str(created.get("name", payload["name"]))
                 self._reload_and_select(kind, created)
-
             def failed(message):
                 save_button.disabled = False
                 status.text = "Speichern fehlgeschlagen: " + message
-
             threading.Thread(target=worker, daemon=True).start()
-
         popup.open()
 
     def open_field_capture(self):
-        content = BoxLayout(
-            orientation="vertical", spacing=dp(10), padding=dp(12)
-        )
-        name_input = TextInput(
-            hint_text="Feldname, z. B. Nordschlag", multiline=False,
-            size_hint_y=None, height=dp(52), write_tab=False
-        )
-        keyboard_container = BoxLayout(
-            orientation="vertical", size_hint_y=None, height=0
-        )
+        content = BoxLayout(orientation="vertical", spacing=dp(10), padding=dp(12))
+        name_input = TextInput(hint_text="Feldname, z. B. Nordschlag", multiline=False,
+                               size_hint_y=None, height=dp(52), write_tab=False)
+        keyboard_container = BoxLayout(orientation="vertical", size_hint_y=None, height=0)
         self.attach_touch_keyboard(name_input, keyboard_container)
         content.add_widget(name_input)
         content.add_widget(Widget(size_hint_y=None, height=dp(80)))
         content.add_widget(keyboard_container)
         content.add_widget(Label(
-            text="Feldgrenze mit dem Traktor abfahren.\n"
+            text="Feldgrenze mit dem Traktor abfahren.\\n"
                  "Die Positionen kommen vom Pico über das Backend.",
-            size_hint_y=None, height=dp(64)
-        ))
+            size_hint_y=None, height=dp(64)))
         status = Label(text="Bereit. GPS wird beim Start geprüft.", halign="center")
         content.add_widget(status)
-
         points = []
         state = {"recording": False, "busy": False}
         event = {"poll": None}
@@ -339,10 +268,8 @@ class MasterDataScreen(BoxLayout):
         buttons.add_widget(start_button)
         buttons.add_widget(stop_button)
         content.add_widget(buttons)
-        popup = Popup(
-            title="Feld per GPS erfassen", content=content,
-            size_hint=(0.92, 0.82), auto_dismiss=False
-        )
+        popup = Popup(title="Feld per GPS erfassen", content=content,
+                      size_hint=(0.92, 0.82), auto_dismiss=False)
         content.add_widget(self.make_button("Abbrechen", lambda *_: cancel_capture()))
 
         def haversine_m(a, b):
@@ -352,12 +279,9 @@ class MasterDataScreen(BoxLayout):
             phi1, phi2 = math.radians(lat1), math.radians(lat2)
             dphi = math.radians(lat2 - lat1)
             dlambda = math.radians(lon2 - lon1)
-            value = (
-                math.sin(dphi / 2) ** 2
-                + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-            )
-            value = min(1.0, max(0.0, value))
-            return 2 * radius * math.asin(math.sqrt(value))
+            value = (math.sin(dphi / 2) ** 2 +
+                     math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2)
+            return 2 * radius * math.asin(math.sqrt(min(1.0, max(0.0, value))))
 
         def handle_gps(data):
             if not state["recording"]:
@@ -442,11 +366,8 @@ class MasterDataScreen(BoxLayout):
             ring = [point[:] for point in points]
             if ring[-1] != ring[0]:
                 ring.append(ring[0][:])
-            payload = {
-                "name": name_input.text.strip(),
-                "boundary": ring,
-                "reference_line": [],
-            }
+            payload = {"name": name_input.text.strip(), "boundary": ring,
+                       "reference_line": []}
             status.text = f"Speichere Feld mit {len(points)} GPS-Punkten …"
             def worker():
                 try:
