@@ -183,14 +183,18 @@ class WifiManager(BoxLayout):
             popup.height = dp(190)
             password_input.focus = False
         def password_focus_changed(instance, focused):
-            keyboard_container.clear_widgets()
-            if focused and security not in ("Offen", "", "--"):
-                keyboard_container.height = dp(210)
-                popup.height = dp(425)
-                keyboard_container.add_widget(TouchKeyboard(target=password_input, on_done=finish_password_entry))
-            else:
-                # Tastendruck auf die virtuelle Tastatur darf sie nicht schließen.
-                pass
+            # Beim Drücken eines virtuellen Buttons verliert das TextInput
+            # den Fokus. Weder beim Verlust noch beim erneuten Fokussieren
+            # darf die Tastatur entfernt oder neu aufgebaut werden.
+            if not focused or security in ("Offen", "", "--"):
+                return
+            if keyboard_container.children:
+                return
+            keyboard_container.height = dp(210)
+            popup.height = dp(425)
+            keyboard_container.add_widget(TouchKeyboard(
+                target=password_input, on_done=finish_password_entry
+            ))
         password_input.bind(focus=password_focus_changed)
         cancel = Button(text="Abbrechen")
         cancel.bind(on_release=popup.dismiss)
