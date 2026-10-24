@@ -187,7 +187,26 @@ const MP=(()=>{
  function history(){st.history.push(JSON.stringify(st.tracks));if(st.history.length>50)st.history.shift();st.dirty=true}
  function pointInside(p){const poly=st.field.boundary;let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])inside=!inside}return inside}
  function distanceSegment(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(dx*dx+dy*dy||1)));return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy)}
- function warnings(){if(!st.field)return '';const boundary=st.field.boundary.map(project);let center=0,band=0;for(const t of st.tracks){for(let j=0;j<t.length-1;j++){const a=project(t[j]),b=project(t[j+1]),steps=Math.max(2,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/2));for(let k=0;k<=steps;k++){const p=[a[0]+(b[0]-a[0])*k/steps,a[1]+(b[1]-a[1])*k/steps],geo=unproject(p);if(!pointInside(geo))center++;let d=Infinity;for(let h=0;h<boundary.length-1;h++)d=Math.min(d,distanceSegment(p,boundary[h],boundary[h+1]));if(d<width()/2)band++}}}return center?`⚠ ${center} Prüfpunkte der Spurmitte liegen außerhalb des Feldes.`:band?`⚠ Arbeitsbreite kann an der Feldgrenze überstehen (${band} Prüfpunkte).`:'Spurmitten und Arbeitsbreite bei Stichproben innerhalb der Feldgrenze.'}
+ function warnings(){
+   // V47: Keine Prüfung oder Warnung mehr für Spurmitten außerhalb
+   // der Feldgrenze. Die optionale Arbeitsbreiten-Warnung bleibt erhalten.
+   if(!st.field)return '';
+   const boundary=st.field.boundary.map(project);
+   let band=0;
+   for(const t of st.tracks){
+     for(let j=0;j<t.length-1;j++){
+       const a=project(t[j]),b=project(t[j+1]);
+       const steps=Math.max(2,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/2));
+       for(let k=0;k<=steps;k++){
+         const p=[a[0]+(b[0]-a[0])*k/steps,a[1]+(b[1]-a[1])*k/steps];
+         let d=Infinity;
+         for(let h=0;h<boundary.length-1;h++)d=Math.min(d,distanceSegment(p,boundary[h],boundary[h+1]));
+         if(d<width()/2)band++;
+       }
+     }
+   }
+   return band?`⚠ Arbeitsbreite kann an der Feldgrenze überstehen (${band} Prüfpunkte).`:'Keine Überlappung mit dem Feldrand in den Stichproben erkannt.';
+ }
  function render(){if(!st.map)return;st.layers.clearLayers();st.markers.clearLayers();st.bands.clearLayers();const w=width();st.tracks.forEach((t,i)=>{const path=t.map(latlng);if($('mp-bands').checked){for(let k=0;k<t.length-1;k++){const a=project(t[k]),b=project(t[k+1]),dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);if(len<.001)continue;const nx=-dy/len*w/2,ny=dx/len*w/2;L.polygon([[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(v=>latlng(unproject(v))),{stroke:false,fillColor:'#418fe4',fillOpacity:.18,interactive:false}).addTo(st.bands)}}const line=L.polyline(path,{color:i===st.selected?'#ed8a20':'#2478e4',weight:i===st.selected?5:3}).addTo(st.layers);line.on('click',e=>{if(st.mode==='draw')return;L.DomEvent.stopPropagation(e);st.selected=i;render()});if(i===st.selected&&st.mode==='select')t.forEach((p,j)=>{const m=L.marker(latlng(p),{draggable:true}).addTo(st.markers);m.on('dragstart',history);m.on('dragend',()=>{const q=m.getLatLng();st.tracks[i][j]=[q.lng,q.lat];render()});m.on('contextmenu',()=>{if(t.length>2){history();t.splice(j,1);render()}})})});if(st.drawing.length)L.polyline(st.drawing.map(latlng),{color:'#ec8d22',weight:4,dashArray:'5 5'}).addTo(st.layers);const list=$('mp-list');list.replaceChildren();st.tracks.forEach((t,i)=>{const b=document.createElement('button');b.type='button';b.textContent=`Spur ${i+1} · ${trackLength(t).toFixed(2).replace(".",",")} m`;if(i===st.selected)b.classList.add('active');b.onclick=()=>{st.selected=i;st.mode='select';render()};list.append(b)});$('mp-selection').textContent=st.selected<0?'Keine Spur ausgewählt':`Spur ${st.selected+1} · ${st.tracks[st.selected].length} Stützpunkte · ${trackLength(st.tracks[st.selected]).toFixed(2).replace('.',',')} m`;refreshReferences();const warning=warnings();$('mp-coverage').textContent=warning;$('mp-coverage').style.color=warning.startsWith('⚠')?'#b42318':'';}
  async function loadField(){if(st.dirty&&!confirm('Ungespeicherte Spuren verwerfen?'))return;st.field=null;st.tracks=[];st.selected=-1;st.id=null;st.dirty=false;st.drawing=[];if(st.layers)st.layers.clearLayers();if(st.markers)st.markers.clearLayers();if(st.bands)st.bands.clearLayers();if(st.fieldLayer)st.map.removeLayer(st.fieldLayer);if(st.edgeLabels)st.edgeLabels.clearLayers();if(!$('mp-field').value)return;st.field=await api('/api/fields/'+$('mp-field').value);st.fieldLayer=L.polygon(st.field.boundary.map(latlng),{color:'#2e8755',weight:3,fillOpacity:.08}).addTo(st.map);st.map.fitBounds(st.fieldLayer.getBounds(),{padding:[30,30]});showBoundaryLengths();render()}
  function finish(){if(st.drawing.length>=2){history();st.tracks.push(st.drawing);st.selected=st.tracks.length-1;msg('Spur angelegt. Jetzt präzise bearbeiten oder speichern.')}else if(st.drawing.length)msg('Mindestens zwei Punkte setzen.',true);st.drawing=[];st.mode='select';render()}
