@@ -21,6 +21,9 @@ systemctl enable pytrac_kivy
 
 
 
+systemctl stop pytrac_kivy
+systemctl stop pytrac_backend
+
 cd /opt
 rm -r pytrac/
 git clone https://github.com/tobiasrode-home/pytrac
