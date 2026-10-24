@@ -10,6 +10,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
+from pytrac_kivy.ui.field_edge_preview import FieldEdgePreview
 
 def open_create_work_order(api,choices,on_created):
     content=BoxLayout(orientation="vertical",spacing=dp(7),padding=dp(10))
@@ -36,6 +37,10 @@ def open_create_work_order(api,choices,on_created):
         names=[f"{x['name']} (#{x['id']})" for x in records]
         widget=select(label,names)
         lookup[kind]=(widget,dict(zip(names,records)))
+    form.add_widget(Label(text="Feldskizze: Nummern entsprechen edge-0, edge-1, …",size_hint_y=None,height=dp(32)))
+    preview=FieldEdgePreview(size_hint_y=None,height=dp(290))
+    form.add_widget(preview)
+    form.add_widget(Label(text="Blau: Ausrichtung  |  Gelb: Start A  |  Rosa: Start B",size_hint_y=None,height=dp(30)))
     edges=select("Ausrichtungskante",["edge-0"])
     start_a=select("Startgrenze A",["edge-1"])
     start_b=select("Startgrenze B",["edge-2"])
@@ -59,7 +64,14 @@ def open_create_work_order(api,choices,on_created):
             if len(values)<3:raise ValueError("Feld benötigt mindestens drei Kanten")
             for widget,default in ((edges,0),(start_a,1),(start_b,2)):
                 widget.values=values;widget.text=values[default]
+            preview.set_boundary(boundary)
+            preview.set_selection(edges.text,start_a.text,start_b.text)
+            status.text=f"{count} Feldgrenzen – Nummern stehen direkt an den Linien"
         except Exception as exc:status.text=str(exc)
+    def update_highlight(*_):
+        preview.set_selection(edges.text,start_a.text,start_b.text)
+    for widget in (edges,start_a,start_b):
+        widget.bind(text=update_highlight)
     lookup["field"][0].bind(text=update_edges)
     update_edges()
     def worker():
