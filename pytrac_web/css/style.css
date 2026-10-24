@@ -131,3 +131,10 @@ body:has(#section-work-planning:not(.hidden)) .container {
 #section-work-planning .mp-tools .mp-order-controls button:first-child{border-radius:7px 0 0 7px}
 #section-work-planning .mp-tools .mp-order-controls button:last-child{border-radius:0 7px 7px 0;border-left-width:0}
 #section-work-planning .mp-tools .mp-order-controls button:disabled{opacity:.4;cursor:not-allowed}
+
+/* V56: Spuren verbinden */
+#section-work-planning .mp-merge-controls{margin-top:18px;padding-top:12px;border-top:1px solid #d6dee1}
+#section-work-planning .mp-merge-controls label,
+#section-work-planning .mp-merge-controls select,
+#section-work-planning .mp-merge-controls button{display:block;width:100%;box-sizing:border-box}
+#section-work-planning .mp-merge-controls select{margin:5px 0 9px}
