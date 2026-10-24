@@ -14,10 +14,10 @@
 <div class="mp-layout"><aside class="mp-tools panel"><h3>Werkzeuge</h3><button id="mp-select" type="button">Spur auswählen / Punkte ziehen</button><button id="mp-draw" type="button">Neue Spur zeichnen</button><button id="mp-finish" type="button">Zeichnung abschließen</button><button id="mp-undo" type="button">Rückgängig</button><button id="mp-delete" type="button">Spur löschen</button><label class="mp-check"><input id="mp-bands" type="checkbox" checked> Arbeitsbreite anzeigen</label><h3>Spuren</h3><div id="mp-list"></div></aside>
 <div class="mp-map-wrap"><div id="mp-map"></div><div class="mp-map-caption">Echte Feldkoordinaten · Spurmitten in Blau · Arbeitsbreite transparent · Warnung bei Grenzübertritt</div></div>
 <aside class="mp-precision panel"><h3>Spur präzise bearbeiten</h3><div id="mp-selection">Spur auswählen oder zeichnen.</div>
-<label for="mp-value">Wert in Metern</label><input id="mp-value" type="number" step="0.01" value="10" inputmode="decimal"><p class="muted">Ein Eingabewert für alle folgenden Aktionen. Bei „Spurlänge übernehmen“ ist es die neue Gesamtlänge; beim Kürzen die abzuziehende Länge; beim Versetzen der seitliche Abstand.</p>
+<label for="mp-value">Wert in Metern</label><input id="mp-value" type="number" step="0.01" value="10" inputmode="decimal"><p class="muted">Ein Eingabewert für alle folgenden Aktionen. Bei „Spurlänge übernehmen“ ist es die neue Gesamtlänge; bei „Start/Ende anpassen“: positiv = kürzen, negativ = verlängern; beim Versetzen der seitliche Abstand.</p>
 <button id="mp-apply-length" type="button">Spurlänge übernehmen</button>
-<button id="mp-apply-trim-start" type="button">Start kürzen</button>
-<button id="mp-apply-trim-end" type="button">Ende kürzen</button>
+<button id="mp-apply-trim-start" type="button">Start anpassen</button>
+<button id="mp-apply-trim-end" type="button">Ende anpassen</button>
 <button id="mp-add-parallel" type="button">Parallelspur erstellen</button>
 <button id="mp-apply-shift" type="button">Spur verschieben</button>
 <hr><h3>An Bezugslinie ausrichten</h3>
