@@ -271,15 +271,21 @@ const MP=(()=>{
    if(!$('mp-merge-target').value||!Number.isInteger(target)||target<0||target>=st.tracks.length||source===target)throw Error('Bitte eine andere Zielspur auswählen.');
    const a=st.tracks[source],b=st.tracks[target];
    if(a.length<2||b.length<2)throw Error('Beide Spuren benötigen mindestens zwei Stützpunkte.');
+   // Die gesamte Zielspur verschieben, sodass ihr Start exakt auf dem Ende
+   // der Ausgangsspur liegt. Keine zusätzliche Verbindungsgerade erzeugen.
    const gap=meters(a[a.length-1],b[0]);
-   const merged=[...a.map(p=>[...p]),...b.slice(gap<0.02?1:0).map(p=>[...p])];
+   const endXY=project(a[a.length-1]),startXY=project(b[0]);
+   const dx=endXY[0]-startXY[0],dy=endXY[1]-startXY[1];
+   const shifted=b.map(p=>{const xy=project(p);return unproject([xy[0]+dx,xy[1]+dy])});
+   shifted[0]=[...a[a.length-1]];
+   const merged=[...a.map(p=>[...p]),...shifted.slice(1)];
    history();
    // Die zusammengeführte Spur steht an der bisherigen Position der Ausgangsspur.
    st.tracks[source]=merged;
    st.tracks.splice(target,1);
    st.selected=target<source?source-1:source;
    st.mode='select';render();
-   msg(`Spuren verbunden: ${merged.length} Stützpunkte, ${trackLength(merged).toFixed(2)} m. ${gap>=0.02?`Verbindungsstück: ${gap.toFixed(2)} m.`:'Endpunkte fallen zusammen.'} Bitte Verlauf auf der Karte prüfen.`);
+   msg(`Spuren verbunden: ${merged.length} Stützpunkte, ${trackLength(merged).toFixed(2)} m. Zielspur um ${gap.toFixed(2)} m verschoben, damit Start und Ende zusammenfallen. Keine Verbindungslinie. Bitte Verlauf auf der Karte prüfen.`);
  }
  function render(){if(!st.map)return;st.layers.clearLayers();st.markers.clearLayers();st.bands.clearLayers();const w=width();st.tracks.forEach((t,i)=>{const path=t.map(latlng);if($('mp-bands').checked){for(let k=0;k<t.length-1;k++){const a=project(t[k]),b=project(t[k+1]),dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);if(len<.001)continue;const nx=-dy/len*w/2,ny=dx/len*w/2;L.polygon([[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(v=>latlng(unproject(v))),{stroke:false,fillColor:'#418fe4',fillOpacity:.18,interactive:false}).addTo(st.bands)}}const line=L.polyline(path,{color:i===st.selected?'#ed8a20':'#2478e4',weight:i===st.selected?5:3}).addTo(st.layers);line.on('click',e=>{if(st.mode==='draw')return;L.DomEvent.stopPropagation(e);st.selected=i;render()});if(i===st.selected&&st.mode==='select')t.forEach((p,j)=>{const m=L.marker(latlng(p),{draggable:true}).addTo(st.markers);m.on('dragstart',history);m.on('dragend',()=>{const q=m.getLatLng();st.tracks[i][j]=[q.lng,q.lat];render()});m.on('contextmenu',()=>{if(t.length>2){history();t.splice(j,1);render()}})})});if(st.drawing.length)L.polyline(st.drawing.map(latlng),{color:'#ec8d22',weight:4,dashArray:'5 5'}).addTo(st.layers);$('mp-move-up').disabled=st.selected<=0;$('mp-move-down').disabled=st.selected<0||st.selected>=st.tracks.length-1;const list=$('mp-list');list.replaceChildren();st.tracks.forEach((t,i)=>{const b=document.createElement('button');b.type='button';b.textContent=`Spur ${i+1} · ${trackLength(t).toFixed(2).replace(".",",")} m`;if(i===st.selected)b.classList.add('active');b.onclick=()=>{st.selected=i;st.mode='select';render()};list.append(b)});$('mp-selection').textContent=st.selected<0?'Keine Spur ausgewählt':`Spur ${st.selected+1} · ${st.tracks[st.selected].length} Stützpunkte · ${trackLength(st.tracks[st.selected]).toFixed(2).replace('.',',')} m`;refreshReferences();refreshMergeTargets();$('mp-coverage').textContent='';$('mp-coverage').style.color='';renderArrows();}
  async function loadField(){if(st.dirty&&!confirm('Ungespeicherte Spuren verwerfen?'))return;st.field=null;st.tracks=[];st.selected=-1;st.id=null;st.dirty=false;st.drawing=[];if(st.layers)st.layers.clearLayers();if(st.markers)st.markers.clearLayers();if(st.bands)st.bands.clearLayers();if(st.arrows)st.arrows.clearLayers();if(st.fieldLayer)st.map.removeLayer(st.fieldLayer);if(st.edgeLabels)st.edgeLabels.clearLayers();if(!$('mp-field').value)return;st.field=await api('/api/fields/'+$('mp-field').value);st.fieldLayer=L.polygon(st.field.boundary.map(latlng),{color:'#2e8755',weight:3,fillOpacity:.08}).addTo(st.map);st.map.fitBounds(st.fieldLayer.getBounds(),{padding:[30,30]});showBoundaryLengths();render()}
