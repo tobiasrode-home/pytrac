@@ -53,7 +53,8 @@ class SettingsScreen(BoxLayout):
             button=self.make_button(self.selection_text(kind),lambda _btn,k=kind:self.open_picker(k),height=dp(43))
             self.selection_buttons[kind]=button
             self.add_widget(button)
-        self.status_label=Label(text='Lade Auswahlmöglichkeiten …',size_hint_y=None,height=dp(32))
+        self.status_label=Label(text='',size_hint_y=None,height=0)
+        self.status_label.bind(text=lambda widget,value:setattr(widget,'height',dp(32) if value else 0))
         self.add_widget(self.status_label)
         # Freier Raum wächst mit der Displayhöhe. Navigationseinstellungen
         # sitzen direkt über der Helligkeit am unteren Displayrand.
@@ -174,8 +175,6 @@ class SettingsScreen(BoxLayout):
         threading.Thread(target=worker,daemon=True).start()
     def set_choices(self,choices):
         self.choices=choices
-        self.status_label.text=(f"{len(choices['tractor'])} Traktoren · "
-            f"{len(choices['implement'])} Anbaugeräte · {len(choices['field'])} Felder")
         self.update_selection_buttons()
     def open_picker(self,kind):
         items=self.choices.get(kind,[])
