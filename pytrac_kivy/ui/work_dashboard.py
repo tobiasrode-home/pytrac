@@ -19,6 +19,7 @@ from kivy.uix.widget import Widget
 
 from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
 from pytrac_kivy.ui.steering_bar import SteeringBar
+from pytrac_kivy.ui.map_autozoom import fit_field_zoom
 
 try:
     from kivy_garden.mapview import MapView, MapMarker
@@ -82,6 +83,7 @@ class WorkDashboard(BoxLayout):
         self.gps_store=GpsRecordingStore(base/'gps_work_points.sqlite3')
         self._popup_distance_label=None
         self._popup_action=None
+        self._popup_feedback_label=None
 
         body=BoxLayout(spacing=dp(8))
         self.add_widget(body)
@@ -169,6 +171,16 @@ class WorkDashboard(BoxLayout):
         self.order_label.text=f"Arbeit: {planning.get('name','—')}"
         self.message_label.text='Hauptfeld geladen · Navigation bereit'
         self._update_track_display()
+        Clock.schedule_once(lambda _dt:self._fit_loaded_field(),0.25)
+
+    def _fit_loaded_field(self):
+        if not self.map_view:return
+        field=self.selection.get('field')
+        if not field:return
+        zoom=fit_field_zoom(field,self.map_view.width,self.map_view.height)
+        center=field_center(field) if field_center else None
+        if center:self.map_view.center_on(*center)
+        if zoom is not None:self.map_view.zoom=zoom
 
     def update_selection(self):
         def name(kind):
@@ -184,7 +196,7 @@ class WorkDashboard(BoxLayout):
             center=field_center(field)
             if center:
                 self.map_view.center_on(*center)
-                self.map_view.zoom=max(self.map_view.zoom,15)
+                Clock.schedule_once(lambda _dt:self._fit_loaded_field(),0.15)
 
     def _update_track_display(self):
         if not self.navigator:return
@@ -260,7 +272,7 @@ class WorkDashboard(BoxLayout):
         key=(self.navigator.state.phase,self.navigator.state.track_index,action)
         if not manual and (key==self._dismissed_event or not fix or
                            fix.get('event_distance_m') is None or
-                           fix['event_distance_m']>3.0):
+                           fix['event_distance_m']>5.0):
             return
         title='Anbaugerät absenken' if action=='lower' else 'Anbaugerät ausheben'
         layout=BoxLayout(orientation='vertical',padding=dp(18),spacing=dp(16))
@@ -272,6 +284,10 @@ class WorkDashboard(BoxLayout):
         layout.add_widget(self._popup_distance_label)
         self._popup_action=action
         self._update_popup_distance()
+        self._popup_feedback_label=Label(text='GPS kann schwanken. Gerät erst manuell bedienen.',
+                                          font_size='17sp',halign='center',
+                                          size_hint_y=None,height=dp(46))
+        layout.add_widget(self._popup_feedback_label)
         big=Button(text=('ABSENKEN BESTÄTIGEN' if action=='lower' else 'AUSHEBEN BESTÄTIGEN'),
                    size_hint_y=None,height=dp(135),font_size='27sp',bold=True,
                    background_normal='',background_color=GREEN)
@@ -287,6 +303,7 @@ class WorkDashboard(BoxLayout):
             self._popup=None
             self._popup_distance_label=None
             self._popup_action=None
+            self._popup_feedback_label=None
         def do_confirm(*_):
             self.confirm(action)
             if self.navigator and ((action=='lower' and self.navigator.state.confirmed_lower)
@@ -298,9 +315,11 @@ class WorkDashboard(BoxLayout):
                 self._popup=None
                 self._popup_distance_label=None
                 self._popup_action=None
+                self._popup_feedback_label=None
             else:
-                # Fehler bleibt im Dashboard sichtbar; Popup nicht als Bestätigung schließen.
-                self.message_label.text=self.message_label.text
+                # Fehler direkt im sichtbaren Popup ausgeben.
+                if self._popup_feedback_label:
+                    self._popup_feedback_label.text=self.message_label.text
         big.bind(on_release=do_confirm)
         cancel.bind(on_release=dismiss_later)
         popup.open()
@@ -333,12 +352,14 @@ class WorkDashboard(BoxLayout):
         speed=data.get('speed_mps')
         stopped=(speed is not None and abs(float(speed))<=.15)
         try:
-            self.navigator.confirm(action,stopped=stopped,distance_tolerance_m=0.35)
+            self.navigator.confirm(action,stopped=stopped,distance_tolerance_m=5.0)
             self.message_label.text=('Absenken bestätigt · Gerät aktiv' if action=='lower'
                                      else 'Ausheben bestätigt · Spur abgeschlossen')
         except (ValueError,TypeError) as exc:
             self.message_label.text=str(exc)
             self._update_popup_distance()
+            if self._popup_feedback_label:
+                self._popup_feedback_label.text=str(exc)
 
     def refresh(self):
         if self.busy:return
@@ -403,7 +424,7 @@ class WorkDashboard(BoxLayout):
                                         + ('links' if signed>0 else 'rechts' if signed<0 else 'mittig'))
                 self.remaining_label.text=f"Bis Spurende: {fix['remaining_m']:.1f} m"
                 action=fix['event_action']
-                if action and fix.get('event_distance_m') is not None and fix['event_distance_m']<=3.0:
+                if action and fix.get('event_distance_m') is not None and fix['event_distance_m']<=5.0:
                     self._show_event_popup(action)
                 if action:
                     self.action_label.text=(('Absenken' if action=='lower' else 'Ausheben')
