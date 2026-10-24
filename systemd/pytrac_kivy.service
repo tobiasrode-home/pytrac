@@ -1,0 +1,16 @@
+[Unit]
+Description=PyTrac
+After=network.target
+Requires=pytrac_backend.service
+
+[Service]
+Type=simple
+#User=tobi
+WorkingDirectory=/opt/pytrac
+Environment=SDL_VIDEODRIVER=kmsdrm
+ExecStart=/usr/bin/python3 /opt/pytrac/pytrac_kivy/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
