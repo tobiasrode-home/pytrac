@@ -8,6 +8,7 @@ Type=simple
 #User=tobi
 WorkingDirectory=/opt/pytrac
 Environment=SDL_VIDEODRIVER=kmsdrm
+ExecStartPre=/bin/sleep 5
 ExecStart=/usr/bin/python3 /opt/pytrac/pytrac_kivy/main.py
 Restart=always
 RestartSec=5
