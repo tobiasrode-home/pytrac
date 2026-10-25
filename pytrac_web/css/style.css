@@ -146,3 +146,14 @@ body:has(#section-work-planning:not(.hidden)) .container {
 /* V60: Spurnummern auf Linien */
 .mp-track-number{background:transparent;border:0;pointer-events:none}
 .mp-track-number span{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#fff;color:#173e70;border:2px solid #2478e4;font:bold 14px system-ui,sans-serif;box-shadow:0 1px 5px #0005}
+
+/* V61: Hinweise und Fehlermeldungen unmittelbar über der Arbeitsplanungskarte */
+.mp-map-wrap #mp-status {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
