@@ -138,3 +138,7 @@ body:has(#section-work-planning:not(.hidden)) .container {
 #section-work-planning .mp-merge-controls select,
 #section-work-planning .mp-merge-controls button{display:block;width:100%;box-sizing:border-box}
 #section-work-planning .mp-merge-controls select{margin:5px 0 9px}
+
+/* V58: Arbeitsauftrag aus der Liste löschen */
+#section-work-planning .mp-saved-row button.danger{color:#b42318;border-color:#d9a5a0}
+#section-work-planning .mp-saved-row button.danger:hover{background:#fbe9e7}
