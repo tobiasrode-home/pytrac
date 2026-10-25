@@ -57,7 +57,7 @@ class PytracKivyApp(App):
         self.dashboard.selection_changed()
         self.dashboard.refresh()
     def show_settings(self):
-        self.screen_manager.current='settings';self.settings_screen.load_choices()
+        self.screen_manager.current='settings';self.settings_screen.load_choices();self.settings_screen.load_navigation_settings()
     def show_master_data(self):
         self.screen_manager.current='master_data';self.master_data_screen.load_choices()
     def show_wifi(self):self.screen_manager.current='wifi'

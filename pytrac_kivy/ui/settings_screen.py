@@ -78,6 +78,7 @@ class SettingsScreen(BoxLayout):
                                          height=dp(44)))
         self.add_widget(BoxLayout(size_hint_y=None,height=dp(12)))
         self._loading_nav_settings=False
+        self._nav_request_serial=0
         self.load_navigation_settings()
         brightness=read_brightness()
         brightness_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
@@ -101,13 +102,33 @@ class SettingsScreen(BoxLayout):
                                     else "GPS-Glättung ausgeschaltet – Speichern drücken")
 
     def load_navigation_settings(self):
+        # Jede neue Abfrage macht ältere Antworten ungültig.
+        self._nav_request_serial+=1
+        serial=self._nav_request_serial
         def worker():
             try:
                 data=self.api_client.get("/api/navigation-settings")
-                Clock.schedule_once(lambda _dt:self.apply_navigation_settings(data))
+                if not isinstance(data,dict):
+                    raise ValueError("Backend lieferte keine gültigen Einstellungen")
+                Clock.schedule_once(lambda _dt,d=data,n=serial:self._nav_loaded(d,n))
             except Exception as exc:
-                Clock.schedule_once(lambda _dt,msg=str(exc):setattr(self.status_label,"text","Navigationseinstellungen: "+msg))
+                message=str(exc)
+                Clock.schedule_once(lambda _dt,m=message,n=serial:self._nav_load_failed(m,n))
         threading.Thread(target=worker,daemon=True).start()
+
+    def _nav_loaded(self,data,serial):
+        if serial!=self._nav_request_serial:return
+        try:
+            self.apply_navigation_settings(data)
+        except (TypeError,ValueError,KeyError) as exc:
+            self._nav_load_failed(str(exc),serial)
+
+    def _nav_load_failed(self,message,serial):
+        if serial!=self._nav_request_serial:return
+        self.status_label.text="Navigationseinstellungen: "+message
+        Popup(title="IMU-Einstellungen konnten nicht geladen werden",
+              content=Label(text="Gespeicherte Werte konnten nicht gelesen werden.\\n"+message),
+              size_hint=(.8,.38)).open()
 
     def apply_navigation_settings(self,data):
         self._loading_nav_settings=True
@@ -128,6 +149,7 @@ class SettingsScreen(BoxLayout):
             return
         payload={"gps_smoothing_enabled":bool(self.smoothing_switch.active),
                  "imu_heading_offset_deg":value}
+        self._nav_request_serial+=1  # Ältere Leseantworten dürfen den gespeicherten Wert nicht überschreiben.
         def worker():
             try:
                 data=self.api_client.put("/api/navigation-settings",payload)
@@ -140,6 +162,7 @@ class SettingsScreen(BoxLayout):
     def _saved_navigation_settings(self,data):
         self.apply_navigation_settings(data)
         self.status_label.text="GPS-/IMU-Einstellungen in tractor.db gespeichert"
+        self.load_navigation_settings()
 
     def set_display_brightness(self,value):
         try:
