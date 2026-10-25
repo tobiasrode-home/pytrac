@@ -1,8 +1,8 @@
 """Gemeinsame GPS-Arbeitsaufzeichnung in tractor.db."""
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pytrac_core.persistence.database import get_db
@@ -53,3 +53,11 @@ def add_progress(planning_id:int,data:ProgressCreate,db:Session=Depends(get_db))
         raise
     db.refresh(p)
     return serialize(p)
+
+@router.delete("/{planning_id}/progress",status_code=204)
+def delete_progress(planning_id:int,db:Session=Depends(get_db)):
+    """Nur aufgezeichnete GPS-Punkte löschen, Arbeitsauftrag und Soll-Spuren behalten."""
+    require_plan(db,planning_id)
+    db.execute(delete(WorkProgressPoint).where(WorkProgressPoint.planning_id==planning_id))
+    db.commit()
+    return Response(status_code=204)
