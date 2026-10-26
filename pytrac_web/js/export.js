@@ -1,6 +1,6 @@
 "use strict";
 const PyTracExport=(()=>{
- const categories={fields:"/api/fields",tractors:"/api/tractors",implements:"/api/implements",work_plannings:"/api/work-plannings"};
+ const categories={fields:"/api/fields",tractors:"/api/tractors",implements:"/api/implements",work_plannings:"/api/data-import/work-plannings-export"};
  const status=()=>document.getElementById("export-status");
  async function get(path){
    const response=await fetch(path,{cache:"no-store"});

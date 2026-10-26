@@ -17,6 +17,7 @@ from pytrac_core.api.routers.work_planning import router as work_planning_router
 from pytrac_core.api.routers.work_progress import router as work_progress_router
 
 from pytrac_core.api.routers.navigation_settings import router as navigation_settings_router
+from pytrac_core.api.routers.data_import import router as data_import_router
 
 vehicle_service = VehicleService()
 
@@ -46,6 +47,7 @@ app.include_router(sensors_router)
 app.include_router(work_planning_router)
 app.include_router(work_progress_router)
 app.include_router(navigation_settings_router)
+app.include_router(data_import_router)
 WEB_DIR = Path(__file__).resolve().parent / 'pytrac_web'
 app.mount('/js', StaticFiles(directory=WEB_DIR / 'js'), name='js')
 app.mount('/css', StaticFiles(directory=WEB_DIR / 'css'), name='css')
