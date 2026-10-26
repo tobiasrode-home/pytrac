@@ -55,6 +55,10 @@ function openEditor(id=null){
     const key=field[0];let value=record?record[key]:field[5];if(value===undefined||value===null)value=key==='reference_line'?[]:'';
     return makeInput(field,value);
   }).join('');
+  if(current==='fields'&&id!==null){
+    const nameInput=$('input-name');
+    if(nameInput){nameInput.readOnly=true;nameInput.title="Feldname wird beim Bearbeiten der Grenze nicht geändert.";}
+  }
   const isField=current==='fields';$('field-map-container').classList.toggle('hidden',!isField);$('editor').classList.remove('hidden');
   if(isField)initFieldMap(record);
   $('editor').scrollIntoView({behavior:'smooth',block:'start'});
@@ -72,7 +76,16 @@ async function saveRecord(event){
     }
     $('save-button').disabled=true;$('save-button').textContent='Speichert …';
     const url=config.api+(editingId===null?'':'/'+editingId);
-    const result=await request(url,{method:editingId===null?'POST':'PUT',body:JSON.stringify(payload)});
+    let result;
+    if(current==='fields'&&editingId!==null){
+      // Feldnamen/Referenzlinie bleiben unverändert; vorhandener Endpunkt ändert nur die Grenze.
+      result=await request(config.api+'/'+editingId+'/boundary',{method:'PUT',body:JSON.stringify({boundary:payload.boundary})});
+      if(JSON.stringify(payload.reference_line)!==JSON.stringify(records.find(r=>Number(r.id)===editingId)?.reference_line||[])){
+        result=await request(config.api+'/'+editingId+'/reference-line',{method:'PUT',body:JSON.stringify({reference_line:payload.reference_line})});
+      }
+    }else{
+      result=await request(url,{method:editingId===null?'POST':'PUT',body:JSON.stringify(payload)});
+    }
     closeEditor();
     if(current==='fields')notice(`Feld '${result.name}' gespeichert. Fläche: ${(Number(result.area_m2)/10000).toLocaleString('de-DE',{minimumFractionDigits:3,maximumFractionDigits:3})} ha.`);
     else notice(config.title+' erfolgreich gespeichert.');
