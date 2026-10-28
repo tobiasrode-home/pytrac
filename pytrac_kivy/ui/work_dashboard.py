@@ -439,6 +439,10 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                 self._popup_distance_label=None
                 self._popup_action=None
                 self._popup_feedback_label=None
+                # Erst nach erfolgreicher Aushebe-Bestaetigung umschalten.
+                # next_track() erhaelt auch die spezielle Referenzfahrt-Logik.
+                if action=='raise':
+                    self.next_track()
             else:
                 # Fehler direkt im sichtbaren Popup ausgeben.
                 if self._popup_feedback_label:
