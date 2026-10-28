@@ -41,17 +41,34 @@ def compensate_antenna(latitude, longitude, heading_deg, pitch_deg, roll_deg,
     north=x2*cos(heading)-y2*sin(heading)
     return move_position(latitude,longitude,-east,-north)
 
-def rear_implement_edge(latitude,longitude,heading_deg,tractor_length_m,
-                        implement_length_m,mount_type='rear',work_offset_m=0.0):
-    """Hinterkante des Anbaugeräts bei Vorwärtsfahrt; Länge ab Traktorheck.
+def implement_progress_position(latitude, longitude, heading_deg, tractor_length_m,
+                                implement_length_m, mount_type='rear', work_offset_m=0.0):
+    """Fortschrittspunkt für Heck/Front; gezogen bleibt an der Traktormitte.
 
-    Bei front/towed sind Geometrieannahmen nicht gesichert.
+    Fahrzeuglänge um die Traktormitte symmetrisch angenommen. Geräte beginnen
+    direkt an Front/Heck. Bei Front wird ausdrücklich die vordere Gerätekante
+    verwendet (nicht die hintere Kante des Bearbeitungswerkzeugs).
     """
-    if mount_type!='rear':
-        raise ValueError("Nur Heckanbau unterstützt; Geometrie für andere Montage unbekannt")
-    rear_distance=float(tractor_length_m)/2+float(implement_length_m)
-    if rear_distance<=0:raise ValueError("Ungültige Fahrzeug-/Gerätelänge")
-    h=radians(float(heading_deg))
-    east=-rear_distance*sin(h)+float(work_offset_m)*cos(h)
-    north=-rear_distance*cos(h)-float(work_offset_m)*sin(h)
-    return move_position(latitude,longitude,east,north)
+    mount_type = getattr(mount_type, 'value', mount_type)
+    if mount_type not in ('front', 'rear', 'towed'):
+        raise ValueError('Unbekannte Anbauposition')
+    if mount_type == 'towed':
+        return float(latitude), float(longitude)
+    tractor_length = float(tractor_length_m)
+    implement_length = float(implement_length_m)
+    if not all(isfinite(v) for v in (tractor_length, implement_length)) or tractor_length <= 0 or implement_length <= 0:
+        raise ValueError('Ungültige Fahrzeug-/Gerätelänge')
+    distance = tractor_length / 2 + implement_length
+    forward = distance if mount_type == 'front' else -distance
+    right = float(work_offset_m)
+    h = radians(float(heading_deg))
+    east = forward * sin(h) + right * cos(h)
+    north = forward * cos(h) - right * sin(h)
+    return move_position(latitude, longitude, east, north)
+
+# Kompatibilität für vorhandene Aufrufer.
+def rear_implement_edge(latitude, longitude, heading_deg, tractor_length_m,
+                        implement_length_m, mount_type='rear', work_offset_m=0.0):
+    return implement_progress_position(latitude, longitude, heading_deg,
+                                       tractor_length_m, implement_length_m,
+                                       mount_type, work_offset_m)

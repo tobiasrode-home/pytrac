@@ -19,7 +19,7 @@ from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
 from pytrac_kivy.ui.steering_bar import SteeringBar
 from pytrac_kivy.ui.map_autozoom import fit_field_zoom
 from pytrac_kivy.ui.gps_filter import adjusted_heading
-from pytrac_core.sensors.antenna_compensation import compensate_antenna, rear_implement_edge
+from pytrac_core.sensors.antenna_compensation import compensate_antenna, implement_progress_position
 
 try:
     from kivy_garden.mapview import MapView, MapMarker
@@ -563,14 +563,13 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                     fix_key=sha256(repr(signature).encode("utf-8")).hexdigest()
                     tractor=self.selection.get('tractor') or {}
                     implement=self.selection.get('implement') or {}
-                    # Fortschritt wird erst an der HINTERKANTE des Heckgeräts
-                    # eingetragen: Traktormitte minus halbe Traktorlänge
-                    # minus Gerätelänge. Ohne belastbare Geometrie keine Fläche.
+                    # Heck: hintere Gerätekante; Front: vordere Gerätekante;
+                    # gezogen: unveränderte, hangkorrigierte Traktormitte.
                     if not data.get('antenna_compensated'):
                         raise ValueError('IMU/Hangkompensation fehlt')
                     if data.get('heading_deg') is None:
                         raise ValueError('Fahrtrichtung fehlt')
-                    record_lat,record_lon=rear_implement_edge(
+                    record_lat,record_lon=implement_progress_position(
                         lat,lon,data['heading_deg'],tractor['length_m'],
                         implement['length_m'],implement.get('mount_type','rear'),
                         implement.get('work_offset_m') or 0.)
