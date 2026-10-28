@@ -18,7 +18,7 @@ from kivy.uix.widget import Widget
 from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
 from pytrac_kivy.ui.steering_bar import SteeringBar
 from pytrac_kivy.ui.map_autozoom import fit_field_zoom
-from pytrac_kivy.ui.gps_filter import AdaptiveGpsFilter, adjusted_heading
+from pytrac_kivy.ui.gps_filter import adjusted_heading
 
 try:
     from kivy_garden.mapview import MapView, MapMarker
@@ -62,10 +62,8 @@ class WorkDashboard(BoxLayout):
         self.navigator=None
         self._marker=None
         self._latest_state=None
-        self.gps_filter=AdaptiveGpsFilter()
-        self.gps_smoothing_enabled=False
+        self.imu_roll_offset_deg=0.0
         self.imu_heading_offset_deg=0.0
-        self._last_gps_sample=None
         self.abstract_map=True
         self._refresh_event=None
 
@@ -505,13 +503,8 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         if self.navigator:self.navigator.update(0,0,gps_valid=False)
 
     def set_navigation_settings(self,data):
-        enabled=bool(data.get("gps_smoothing_enabled",False))
-        offset=float(data.get("imu_heading_offset_deg",0.))
-        if enabled!=self.gps_smoothing_enabled:
-            self.gps_filter.reset()
-            self._last_gps_sample=None
-        self.gps_smoothing_enabled=enabled
-        self.imu_heading_offset_deg=offset
+        self.imu_heading_offset_deg=float(data.get("imu_heading_offset_deg",0.))
+        self.imu_roll_offset_deg=float(data.get("imu_roll_offset_deg",0.))
 
     def _show_state(self,data):
         # Rohdaten bleiben unverändert im Backend. Anzeige und Navigation
@@ -523,29 +516,11 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         valid=valid and lat is not None and lon is not None
         if data.get('imu_valid') and data.get('heading_deg') is not None:
             data['heading_deg']=adjusted_heading(data['heading_deg'],self.imu_heading_offset_deg)
-        if valid:
-            raw_sample=(data.get('timestamp'),float(lat),float(lon))
-            sample=raw_sample
-            if sample==self._last_gps_sample:
-                # Kein neuer Sensor-Fix: Position unverändert lassen.
-                if self._latest_state:
-                    lat=self._latest_state.get('latitude',lat)
-                    lon=self._latest_state.get('longitude',lon)
-            else:
-                self._last_gps_sample=sample
-                if self.gps_smoothing_enabled:
-                    try:
-                        lat,lon=self.gps_filter.update(lat,lon,data.get('timestamp'),
-                            speed_mps=data.get('speed_mps'),accuracy_m=data.get('gps_accuracy_m'))
-                    except (ValueError,TypeError,OverflowError):
-                        self.gps_filter.reset()
-            data['latitude'],data['longitude']=lat,lon
-        else:
-            self.gps_filter.reset()
-            self._last_gps_sample=None
+        if data.get('imu_valid') and data.get('roll_deg') is not None:
+            data['roll_deg']=float(data['roll_deg'])+self.imu_roll_offset_deg
+        # Kein GPS-Glättungsfilter mehr: Rohposition direkt verwenden.
         self._latest_state=data
-        self.gps_label.text=(('GPS: gültig · geglättet' if self.gps_smoothing_enabled else 'GPS: gültig · roh')
-                             if valid else 'GPS: kein aktueller Fix')
+        self.gps_label.text=('GPS: gültig · roh' if valid else 'GPS: kein aktueller Fix')
         speed=data.get('speed_mps')
         self.speed_label.text=(f'Geschwindigkeit: {float(speed)*3.6:.1f} km/h'
                                if speed is not None else 'Geschwindigkeit: —')

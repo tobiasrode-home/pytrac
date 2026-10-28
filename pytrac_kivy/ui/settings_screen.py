@@ -29,7 +29,7 @@ class SettingsScreen(BoxLayout):
         self.on_work_order_loaded=on_work_order_loaded
         self.on_work_order_reset=on_work_order_reset
         self.on_navigation_settings=on_navigation_settings
-        self.navigation_options={"gps_smoothing_enabled":False,"imu_heading_offset_deg":0.0}
+        self.navigation_options={"imu_heading_offset_deg":0.0,"imu_roll_offset_deg":0.0}
         self.choices={'tractor':[],'implement':[],'field':[]}
         self.selection_buttons={}
         header=BoxLayout(size_hint_y=None,height=dp(50),spacing=dp(6))
@@ -63,16 +63,17 @@ class SettingsScreen(BoxLayout):
         self.add_widget(Label(text="GPS und IMU",size_hint_y=None,height=dp(26),
                               bold=True,font_size="18sp"))
         nav_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
-        nav_row.add_widget(Label(text="GPS glätten",size_hint_x=.25))
-        self.smoothing_switch=Switch(active=False,size_hint_x=.12)
-        self.smoothing_switch.bind(active=self._smoothing_changed)
-        nav_row.add_widget(self.smoothing_switch)
-        nav_row.add_widget(Label(text="IMU-Offset (°)",size_hint_x=.27))
-        self.heading_offset_input=TextInput(text="0",multiline=False,
-                                            input_filter=None,size_hint_x=.16)
-        bind_fullscreen_keyboard(self.heading_offset_input,"IMU-Offset in Grad (-180 bis +180)")
+        nav_row.add_widget(Label(text="Ausrichtung (°)",size_hint_x=.24))
+        self.heading_offset_input=TextInput(text="0",multiline=False,size_hint_x=.18)
+        bind_fullscreen_keyboard(self.heading_offset_input,"Ausrichtungs-Offset in Grad")
         nav_row.add_widget(self.heading_offset_input)
+        nav_row.add_widget(Label(text="Neigung (°)",size_hint_x=.24))
+        self.roll_offset_input=TextInput(text="0",multiline=False,size_hint_x=.18)
+        bind_fullscreen_keyboard(self.roll_offset_input,"Neigungs-Offset in Grad (Roll)")
+        nav_row.add_widget(self.roll_offset_input)
         self.add_widget(nav_row)
+        self.add_widget(Label(text="Neigungs-Offset: IMU-Nullpunkt bei waagerechtem Traktor.",
+                              size_hint_y=None,height=dp(23),font_size="13sp"))
         self.add_widget(self.make_button("GPS-/IMU-Einstellungen speichern",
                                          lambda *_:self.save_navigation_settings(),
                                          height=dp(44)))
@@ -95,11 +96,6 @@ class SettingsScreen(BoxLayout):
                                     size_hint_y=None,height=dp(24))
         self.add_widget(self.brightness_label)
         self.load_choices()
-
-    def _smoothing_changed(self,_widget,active):
-        if not self._loading_nav_settings:
-            self.status_label.text=("GPS-Glättung eingeschaltet – Speichern drücken" if active
-                                    else "GPS-Glättung ausgeschaltet – Speichern drücken")
 
     def load_navigation_settings(self):
         # Jede neue Abfrage macht ältere Antworten ungültig.
@@ -134,8 +130,8 @@ class SettingsScreen(BoxLayout):
         self._loading_nav_settings=True
         try:
             self.navigation_options=dict(data)
-            self.smoothing_switch.active=bool(data.get("gps_smoothing_enabled",False))
             self.heading_offset_input.text=str(data.get("imu_heading_offset_deg",0.0))
+            self.roll_offset_input.text=str(data.get("imu_roll_offset_deg",0.0))
             if self.on_navigation_settings:self.on_navigation_settings(self.navigation_options)
         finally:
             self._loading_nav_settings=False
@@ -143,12 +139,13 @@ class SettingsScreen(BoxLayout):
     def save_navigation_settings(self):
         try:
             value=float(self.heading_offset_input.text.replace(",","."))
-            if not -180<=value<=180:raise ValueError("Offset muss zwischen -180° und +180° liegen")
+            if not -180<=value<=180:raise ValueError("Ausrichtungs-Offset muss zwischen -180° und +180° liegen")
+            roll=float(self.roll_offset_input.text.replace(",","."))
+            if not -45<=roll<=45:raise ValueError("Neigungs-Offset muss zwischen -45° und +45° liegen")
         except ValueError as exc:
             self.status_label.text="Ungültiger IMU-Offset: "+str(exc)
             return
-        payload={"gps_smoothing_enabled":bool(self.smoothing_switch.active),
-                 "imu_heading_offset_deg":value}
+        payload={"imu_heading_offset_deg":value,"imu_roll_offset_deg":roll}
         self._nav_request_serial+=1  # Ältere Leseantworten dürfen den gespeicherten Wert nicht überschreiben.
         def worker():
             try:
