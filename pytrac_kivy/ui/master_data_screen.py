@@ -15,6 +15,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from pytrac_kivy.ui.keyboard import TouchKeyboard
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
+from pytrac_core.sensors.antenna_compensation import compensate_antenna, move_position
 
 GPS_POLL_INTERVAL = 1.0
 MIN_POINT_DISTANCE_M = 2.0
@@ -137,8 +138,9 @@ class MasterDataScreen(BoxLayout):
                 ("width_m", "Breite (m)", "number", "2.5"),
                 ("wheelbase_m", "Radstand (m)", "number", "2.8"),
                 ("max_steering_angle_deg", "Max. Lenkwinkel (Grad)", "number", "35"),
-                ("gps_offset_length_m", "GPS-Versatz längs (m)", "number", "0"),
-                ("gps_offset_width_m", "GPS-Versatz seitlich (m)", "number", "0"),
+                ("gps_offset_length_m", "GPS längs (m; + vorne / - hinten)", "number", "0"),
+                ("gps_offset_width_m", "GPS seitlich (m; - links / + rechts)", "number", "0"),
+                ("gps_offset_height_m", "GPS-Antennenhöhe über Boden (m)", "number", "0"),
             ]
             endpoint = "/api/tractors"
         elif kind == "implement":
@@ -261,15 +263,21 @@ class MasterDataScreen(BoxLayout):
         status = Label(text="Bereit. GPS wird beim Start geprüft.", halign="center")
         content.add_widget(status)
         points = []
-        state = {"recording": False, "busy": False}
+        state = {"recording": False, "busy": False, "paused": False,
+                 "side": None, "heading_offset": 0.0, "roll_offset": 0.0}
         event = {"poll": None}
+        side_label = Label(text="Grenzseite: noch nicht gewählt", size_hint_y=None, height=dp(36))
+        content.add_widget(side_label)
         buttons = GridLayout(cols=2, spacing=dp(8), size_hint_y=None, height=dp(60))
         start_button = self.make_button("Aufzeichnung starten", lambda *_: start_recording())
         stop_button = self.make_button("Stoppen und speichern", lambda *_: stop_recording())
         stop_button.disabled = True
+        pause_button = self.make_button("Pause", lambda *_: toggle_pause(), height=dp(54))
+        pause_button.disabled = True
         buttons.add_widget(start_button)
         buttons.add_widget(stop_button)
         content.add_widget(buttons)
+        content.add_widget(pause_button)
         popup = Popup(title="Feld per GPS erfassen", content=content,
                       size_hint=(0.92, 0.82), auto_dismiss=False)
         content.add_widget(self.make_button("Abbrechen", lambda *_: cancel_capture()))
@@ -285,32 +293,55 @@ class MasterDataScreen(BoxLayout):
                      math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2)
             return 2 * radius * math.asin(math.sqrt(min(1.0, max(0.0, value))))
 
-        def handle_gps(data):
-            if not state["recording"]:
-                return
+        def handle_gps(data, force_point=False):
+            if not state["recording"] or (state["paused"] and not force_point):
+                return False
             if not data.get("gps_valid", False):
                 status.text = "GPS nicht zuverlässig: " + str(data.get("reason", "Kein gültiger Fix"))
-                return
+                return False
             try:
                 lon, lat = float(data["longitude"]), float(data["latitude"])
-            except (KeyError, TypeError, ValueError):
-                status.text = "GPS-Antwort enthält keine gültigen Koordinaten."
-                return
+                tractor = self.selection.get("tractor") or {}
+                if not tractor or float(tractor.get("length_m") or 0) <= 0 or float(tractor.get("width_m") or 0) <= 0:
+                    raise ValueError("Traktor mit Länge und Breite auswählen")
+                if not data.get("imu_valid") or any(data.get(k) is None for k in ("heading_deg", "pitch_deg", "roll_deg")):
+                    raise ValueError("IMU für die Grenzkorrektur fehlt")
+                heading = (float(data["heading_deg"]) + state["heading_offset"]) % 360
+                roll = float(data["roll_deg"]) + state["roll_offset"]
+                lat, lon = compensate_antenna(lat, lon, heading, float(data["pitch_deg"]), roll,
+                    tractor.get("gps_offset_length_m") or 0,
+                    tractor.get("gps_offset_width_m") or 0,
+                    tractor.get("gps_offset_height_m") or 0)
+                # Hintere äußere Traktorecke: x = -L/2, y = +/-B/2.
+                # +y = rechts. Keine zusätzliche seitliche Entfernung.
+                h = math.radians(heading)
+                rear = -float(tractor["length_m"]) / 2
+                side = float(tractor["width_m"]) / 2 * (1 if state["side"] == "right" else -1)
+                east = rear * math.sin(h) + side * math.cos(h)
+                north = rear * math.cos(h) - side * math.sin(h)
+                lat, lon = move_position(lat, lon, east, north)
+            except (KeyError, TypeError, ValueError, OverflowError) as exc:
+                status.text = "Grenzposition nicht berechenbar: " + str(exc)
+                return False
+            except Exception as exc:
+                status.text = "Grenzkorrektur: " + str(exc)
+                return False
             if not (math.isfinite(lon) and math.isfinite(lat)
                     and -180 <= lon <= 180 and -90 <= lat <= 90):
                 status.text = "Ungültige GPS-Koordinaten."
-                return
+                return False
             point = [lon, lat]
-            if not points or haversine_m(points[-1], point) >= MIN_POINT_DISTANCE_M:
+            if force_point or not points or haversine_m(points[-1], point) >= MIN_POINT_DISTANCE_M:
                 points.append(point)
             status.text = f"Aufzeichnung läuft · {len(points)} Punkte · GPS gültig"
+            return True
 
         def gps_error(message):
             if state["recording"]:
                 status.text = "GPS/API-Fehler: " + message
 
         def poll_gps(_dt):
-            if not state["recording"] or state["busy"]:
+            if not state["recording"] or state["paused"] or state["busy"]:
                 return
             state["busy"] = True
             def worker():
@@ -324,14 +355,77 @@ class MasterDataScreen(BoxLayout):
                     state["busy"] = False
             threading.Thread(target=worker, daemon=True).start()
 
+        def toggle_pause():
+            if not state["recording"]:
+                return
+            if not state["paused"]:
+                state["paused"] = True
+                pause_button.text = "Fortsetzen / Seite wählen"
+                status.text = f"Pausiert · {len(points)} Punkte. Zum Fortsetzen Grenzseite wählen."
+            else:
+                choose_side(resume=True)
+
+        def choose_side(resume=False):
+            layout = BoxLayout(orientation="vertical", spacing=dp(12), padding=dp(12))
+            layout.add_widget(Label(text="Auf welcher Seite liegt die Feldgrenze?\n"
+                                    "Aufgezeichnet wird die hintere äußere Traktorecke."))
+            row = BoxLayout(orientation="horizontal", spacing=dp(12), size_hint_y=None, height=dp(80))
+            choice = Popup(title="Feldgrenze – Seite auswählen", content=layout,
+                           size_hint=(0.85, 0.55), auto_dismiss=False)
+            def select_side(side):
+                state["side"] = side
+                side_label.text = "Grenzseite: " + ("RECHTS" if side == "right" else "LINKS")
+                choice.dismiss()
+                if resume:
+                    # Erst einen frischen GPS-Fix der hinteren Ecke speichern.
+                    # Bei fehlendem Fix bleibt die Aufnahme pausiert; kein
+                    # unbemerkter Start mit einem Punkt erst 2 m später.
+                    pause_button.disabled = True
+                    status.text = "Prüfe Eckposition zum Fortsetzen …"
+                    def worker():
+                        try:
+                            data = self.request("/api/vehicle/state")
+                            Clock.schedule_once(lambda _dt: finish_resume(data))
+                        except Exception as exc:
+                            message = str(exc)
+                            Clock.schedule_once(lambda _dt: resume_failed(message))
+                    def finish_resume(data):
+                        if not state["recording"] or not state["paused"]:
+                            return
+                        if handle_gps(data, force_point=True):
+                            state["paused"] = False
+                            pause_button.text = "Pause"
+                            status.text = f"Fortgesetzt · Eckpunkt gespeichert · {len(points)} Punkte"
+                        else:
+                            status.text = "Fortsetzen nicht möglich: " + status.text
+                        pause_button.disabled = False
+                    def resume_failed(message):
+                        if state["recording"] and state["paused"]:
+                            status.text = "Fortsetzen fehlgeschlagen: " + message
+                            pause_button.disabled = False
+                    threading.Thread(target=worker, daemon=True).start()
+                else:
+                    start_gps_check()
+            row.add_widget(self.make_button("LINKS", lambda *_: select_side("left")))
+            row.add_widget(self.make_button("RECHTS", lambda *_: select_side("right")))
+            layout.add_widget(row)
+            layout.add_widget(self.make_button("Abbrechen", lambda *_: choice.dismiss()))
+            choice.open()
+
         def start_recording():
             if not name_input.text.strip():
                 status.text = "Bitte zuerst einen Feldnamen eingeben."
                 return
+            choose_side()
+
+        def start_gps_check():
             start_button.disabled = True
-            status.text = "Prüfe GPS-Verbindung …"
+            status.text = "Prüfe GPS-Verbindung und IMU …"
             def worker():
                 try:
+                    settings = self.request("/api/navigation-settings")
+                    state["heading_offset"] = float(settings.get("imu_heading_offset_deg") or 0)
+                    state["roll_offset"] = float(settings.get("imu_roll_offset_deg") or 0)
                     data = self.request("/api/vehicle/state")
                     if not data.get("gps_valid", False):
                         raise ValueError("Kein gültiger GPS-Fix: " + str(data.get("reason", "unbekannt")))
@@ -346,6 +440,7 @@ class MasterDataScreen(BoxLayout):
             state["recording"] = True
             handle_gps(data)
             stop_button.disabled = False
+            pause_button.disabled = False
             status.text = f"Aufzeichnung läuft · {len(points)} Punkte"
             event["poll"] = Clock.schedule_interval(poll_gps, GPS_POLL_INTERVAL)
 
@@ -357,6 +452,8 @@ class MasterDataScreen(BoxLayout):
             if not state["recording"]:
                 return
             state["recording"] = False
+            state["paused"] = False
+            pause_button.disabled = True
             if event["poll"] is not None:
                 event["poll"].cancel()
                 event["poll"] = None

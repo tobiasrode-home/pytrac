@@ -72,6 +72,8 @@ class SettingsScreen(BoxLayout):
         bind_fullscreen_keyboard(self.roll_offset_input,"Neigungs-Offset in Grad (Roll)")
         nav_row.add_widget(self.roll_offset_input)
         self.add_widget(nav_row)
+        self.add_widget(Label(text="Neigungs-Offset: IMU-Nullpunkt bei waagerechtem Traktor.",
+                              size_hint_y=None,height=dp(23),font_size="13sp"))
         self.add_widget(self.make_button("GPS-/IMU-Einstellungen speichern",
                                          lambda *_:self.save_navigation_settings(),
                                          height=dp(44)))

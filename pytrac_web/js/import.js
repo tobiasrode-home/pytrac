@@ -2,17 +2,25 @@
 (()=>{
  const file=document.getElementById("import-file"),preview=document.getElementById("import-preview");
  const apply=document.getElementById("import-apply"),summary=document.getElementById("import-summary");
- let approved=null;
+ const legacyLabel=document.createElement("label");
+ legacyLabel.style.display="block";
+ legacyLabel.style.margin="12px 0";
+ const legacy=document.createElement("input");
+ legacy.type="checkbox";
+ legacyLabel.append(legacy,document.createTextNode(" Alte Arbeitsplan-Exporte: vorhandene IDs ohne Namensprüfung zuordnen (nur bei eigener Sicherung)"));
+ preview.parentNode.insertBefore(legacyLabel,preview);
+ let approved=null,approvedLegacy=false;
+ legacy.addEventListener("change",()=>{approved=null;apply.disabled=true;summary.textContent="Bitte Importprüfung erneut starten.";});
  file.addEventListener("change",()=>{approved=null;apply.disabled=true;summary.textContent="";});
- async function call(payload,dry_run){
-   const response=await fetch("/api/data-import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({payload,dry_run})});
+ async function call(payload,dry_run,allow_legacy_id_matching){
+   const response=await fetch("/api/data-import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({payload,dry_run,allow_legacy_id_matching})});
    const result=await response.json();
    if(!response.ok)throw new Error(typeof result.detail==="string"?result.detail:JSON.stringify(result.detail));
    return result;
  }
  function describe(result){
    const names={fields:"Felder",tractors:"Traktoren",implements:"Anbaugeräte",work_plannings:"Arbeitspläne",work_history:"GPS-Historienpunkte"};
-   return Object.entries(result.counts).map(([key,c])=>`${names[key]}: ${c.new} neu, ${c.existing} bereits vorhanden`).join("\n");
+   return Object.entries(result.counts).map(([key,c])=>`${names[key]}: ${c.new} neu, ${c.existing} bereits vorhanden`).join("\n")+(result.warnings?.length?"\nWARNUNGEN:\n"+result.warnings.join("\n"):"");
  }
  preview.addEventListener("click",async()=>{
    approved=null;apply.disabled=true;summary.textContent="Prüfe Importdatei …";
@@ -20,7 +28,8 @@
      if(!file.files.length)throw new Error("Bitte eine JSON-Datei auswählen.");
      if(file.files[0].size>30_000_000)throw new Error("Datei zu groß (max. 30 MB).");
      const payload=JSON.parse(await file.files[0].text());
-     const result=await call(payload,true);
+     const result=await call(payload,true,legacy.checked);
+     approvedLegacy=legacy.checked;
      approved=payload;apply.disabled=false;
      summary.textContent="Vorschau (noch nichts gespeichert):\n"+describe(result);
    }catch(e){summary.textContent="Importprüfung fehlgeschlagen: "+e.message;}
@@ -30,7 +39,7 @@
    if(!confirm("Geprüfte Daten jetzt importieren? Vorhandene Datensätze werden nicht überschrieben."))return;
    apply.disabled=true;preview.disabled=true;
    try{
-     const result=await call(approved,false);
+     const result=await call(approved,false,approvedLegacy);
      summary.textContent="Import abgeschlossen:\n"+describe(result);
      approved=null;
      if(typeof loadAll==="function")await loadAll();
