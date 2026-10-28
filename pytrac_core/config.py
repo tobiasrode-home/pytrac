@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     port: int = 8000
     gps_port: str = ""
     gps_baudrate: int = 9600
+    gps_receiver: str = "zed_f9p"  # "legacy" for old NEO-6M
+    ntrip_url: str = ""
+    ntrip_username: str = ""
+    ntrip_password: str = ""
+    ntrip_send_gga: bool = True
     imu_port: str = ""
     imu_baudrate: int = 115200
     sensor_output_rate_hz: float = 5.0

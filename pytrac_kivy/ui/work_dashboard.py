@@ -253,8 +253,15 @@ class WorkDashboard(BoxLayout):
         planning=nav.planning if nav else {}
         work=str(planning.get('name') or '—')
         ident=str(planning.get('id') or '—')
+        speed=(self._latest_state or {}).get('speed_mps')
+        try:
+            speed_text=f'{max(0.0,float(speed))*3.6:.1f} km/h' if valid and speed is not None else '— km/h'
+        except (TypeError,ValueError):
+            speed_text='— km/h'
+        quality=(self._latest_state or {}).get('gps_fix_quality')
+        gps_status=({4:'RTK Fix',5:'RTK Float',2:'DGPS'}.get(quality,'GPS') if valid else 'N/A')
         self.selection_label.text=(
-            f"GPS: {'Aktiv' if valid else 'N/A'}   |   Spur: {track}   |   "
+            f"GPS: {gps_status}   |   Tempo: {speed_text}   |   Spur: {track}   |   "
             f"Arbeitsgerät: {implement}   |   Arbeit: {work} "
             f"({name('tractor')}, {name('implement')}, {name('field')}, ID {ident})")
 
