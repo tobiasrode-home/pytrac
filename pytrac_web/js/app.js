@@ -6,7 +6,7 @@ let records=[];
 let editingId=null;
 const configs={
   fields:{title:'Felder',api:'/api/fields',fields:[['name','Feldname','text',true,'',''],['boundary','Feldgrenze (GeoJSON)','json',true,'',''],['reference_line','Referenzlinie (JSON)','json',false,'',[]]]},
-  tractors:{title:'Traktoren',api:'/api/tractors',fields:[['name','Name','text',true,'',''],['length_m','Länge (m)','number',true,'',''],['width_m','Breite (m)','number',true,'',''],['gps_offset_length_m','GPS-Längsversatz (m)','number',false,'',0],['gps_offset_width_m','GPS-Seitenversatz (m)','number',false,'',0],['wheelbase_m','Radstand (m)','number',true,'',''],['max_steering_angle_deg','Lenkwinkel (°)','number',true,'','']]},
+  tractors:{title:'Traktoren',api:'/api/tractors',fields:[['name','Name','text',true,'',''],['length_m','Länge (m)','number',true,'',''],['width_m','Breite (m)','number',true,'',''],['gps_offset_length_m','GPS-Längsversatz (m; + vorne, − hinten, Bezug: Traktormitte)','number',false,'',0],['gps_offset_width_m','GPS-Seitenversatz (m; − links, + rechts, Bezug: Traktormitte)','number',false,'',0],['gps_offset_height_m','GPS-Antennenhöhe (m; über Boden, Bezug: Traktormitte)','number',false,'',0],['wheelbase_m','Radstand (m)','number',true,'',''],['max_steering_angle_deg','Lenkwinkel (°)','number',true,'','']]},
   implements:{title:'Anbaugeräte',api:'/api/implements',fields:[['name','Name','text',true,'',''],['length_m','Länge (m)','number',true,'',''],['working_width_m','Arbeitsbreite (m)','number',true,'',''],['mount_type','Anbauposition','select',true,'','rear',[['front','Frontanbau'],['rear','Heckanbau'],['towed','Gezogen']]],['work_offset_m','Arbeitsversatz (m)','number',false,'',0]]}
 };
 async function request(url,options={}){

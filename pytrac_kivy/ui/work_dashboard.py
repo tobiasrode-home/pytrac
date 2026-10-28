@@ -19,6 +19,7 @@ from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
 from pytrac_kivy.ui.steering_bar import SteeringBar
 from pytrac_kivy.ui.map_autozoom import fit_field_zoom
 from pytrac_kivy.ui.gps_filter import adjusted_heading
+from pytrac_core.sensors.antenna_compensation import compensate_antenna, rear_implement_edge
 
 try:
     from kivy_garden.mapview import MapView, MapMarker
@@ -518,7 +519,24 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
             data['heading_deg']=adjusted_heading(data['heading_deg'],self.imu_heading_offset_deg)
         if data.get('imu_valid') and data.get('roll_deg') is not None:
             data['roll_deg']=float(data['roll_deg'])+self.imu_roll_offset_deg
-        # Kein GPS-Glättungsfilter mehr: Rohposition direkt verwenden.
+        # Korrigierte Traktormitte als gemeinsamer Bezugspunkt für Anzeige,
+        # Navigation und neue Aufzeichnung. Rohdaten bleiben im Backend.
+        if valid and data.get('imu_valid') and all(data.get(k) is not None for k in
+                ('heading_deg','pitch_deg','roll_deg')):
+            tractor=self.selection.get('tractor') or {}
+            try:
+                lat,lon=compensate_antenna(
+                    lat,lon,data['heading_deg'],data['pitch_deg'],data['roll_deg'],
+                    tractor.get('gps_offset_length_m') or 0.,
+                    tractor.get('gps_offset_width_m') or 0.,
+                    tractor.get('gps_offset_height_m') or 0.)
+                data['latitude'],data['longitude']=lat,lon
+                data['antenna_compensated']=True
+            except (ValueError,TypeError,OverflowError):
+                data['antenna_compensated']=False
+        else:
+            data['antenna_compensated']=False
+
         self._latest_state=data
         self.gps_label.text=('GPS: gültig · roh' if valid else 'GPS: kein aktueller Fix')
         speed=data.get('speed_mps')
@@ -538,13 +556,27 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         if valid and self.recording and self.navigator and (self.navigator.state.active or self.record_override is True):
             try:
                 # Sensor-Zeitstempel verhindert wiederholtes Speichern desselben Fixes.
-                signature=raw_sample
+                signature=(data.get('timestamp'),float(data.get('latitude',lat)),
+                           float(data.get('longitude',lon)))
                 if signature!=self._last_record_signature:
                     from hashlib import sha256
                     fix_key=sha256(repr(signature).encode("utf-8")).hexdigest()
+                    tractor=self.selection.get('tractor') or {}
+                    implement=self.selection.get('implement') or {}
+                    # Fortschritt wird erst an der HINTERKANTE des Heckgeräts
+                    # eingetragen: Traktormitte minus halbe Traktorlänge
+                    # minus Gerätelänge. Ohne belastbare Geometrie keine Fläche.
+                    if not data.get('antenna_compensated'):
+                        raise ValueError('IMU/Hangkompensation fehlt')
+                    if data.get('heading_deg') is None:
+                        raise ValueError('Fahrtrichtung fehlt')
+                    record_lat,record_lon=rear_implement_edge(
+                        lat,lon,data['heading_deg'],tractor['length_m'],
+                        implement['length_m'],implement.get('mount_type','rear'),
+                        implement.get('work_offset_m') or 0.)
                     payload={"fix_key":fix_key,"phase":self.navigator.state.phase,
                              "track_id":str(self.navigator.track['id']),
-                             "latitude":float(lat),"longitude":float(lon),
+                             "latitude":float(record_lat),"longitude":float(record_lon),
                              "speed_mps":speed,"accuracy_m":data.get('gps_accuracy_m')}
                     point=self.api_client.post(
                         f"/api/work-plannings/{self.navigator.planning['id']}/progress",payload)

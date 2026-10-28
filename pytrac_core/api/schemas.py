@@ -12,6 +12,7 @@ class TractorCreate(BaseModel):
     max_steering_angle_deg: float = Field(gt=0, lt=90)
     gps_offset_length_m: float = 0.0
     gps_offset_width_m: float = 0.0
+    gps_offset_height_m: float = Field(default=0.0, ge=0, le=10, allow_inf_nan=False)
 class TractorUpdate(TractorCreate): pass
 class TractorRead(TractorCreate):
     id: int

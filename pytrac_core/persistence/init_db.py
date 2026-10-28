@@ -41,3 +41,15 @@ def init_db() -> None:
             tracks_json TEXT NOT NULL,
             FOREIGN KEY(planning_id) REFERENCES work_plannings(id) ON DELETE CASCADE
         )"""))
+
+    # V71: Antennenhöhe und IMU-Neigungsoffset in bestehender tractor.db.
+    inspector=inspect(engine)
+    with engine.begin() as conn:
+        if 'tractors' in inspector.get_table_names():
+            existing={col['name'] for col in inspector.get_columns('tractors')}
+            if 'gps_offset_height_m' not in existing:
+                conn.execute(text("ALTER TABLE tractors ADD COLUMN gps_offset_height_m FLOAT NOT NULL DEFAULT 0.0"))
+        if 'navigation_settings' in inspector.get_table_names():
+            existing={col['name'] for col in inspector.get_columns('navigation_settings')}
+            if 'imu_roll_offset_deg' not in existing:
+                conn.execute(text("ALTER TABLE navigation_settings ADD COLUMN imu_roll_offset_deg FLOAT NOT NULL DEFAULT 0.0"))
