@@ -4,6 +4,7 @@ Keine Lenkbefehle, keine automatische Gerätebetätigung. Das Rangieren im
 Vorgewende bleibt beim Fahrer. GPS muss gültig sein.
 """
 import threading
+import math
 from pathlib import Path
 from pytrac_kivy.ui.stop_distance import stop_distance_text, signed_distance_to_stop
 from kivy.clock import Clock
@@ -66,6 +67,8 @@ class WorkDashboard(BoxLayout):
         self.imu_roll_offset_deg=0.0
         self.imu_heading_offset_deg=0.0
         self.abstract_map=True
+        self._guidance_zoom=None
+        self._last_guidance_zoom_at=0.0
         self._refresh_event=None
 
         # Die Lenkhilfe belegt die gesamte Displaybreite und steht ganz oben.
@@ -154,6 +157,12 @@ class WorkDashboard(BoxLayout):
         self.abstract_map=not self.abstract_map
         if self.field_overlay:
             self.field_overlay.set_abstract(self.abstract_map)
+        self._guidance_zoom=None
+        if self.abstract_map and self._latest_state:
+            self._update_guidance_view(self._latest_state)
+        elif not self.abstract_map:
+            self._fit_loaded_field()
+        self._scale_tractor()
 
     def load_work_order(self,planning,guidance,objects):
         """Wird aus SettingsScreen nach erfolgreichem Laden aufgerufen."""
@@ -547,7 +556,10 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         self.speed_label.text=(f'Geschwindigkeit: {float(speed)*3.6:.1f} km/h'
                                if speed is not None else 'Geschwindigkeit: —')
         if valid and self.map_view and TractorMarker:
-            self.map_view.center_on(float(lat),float(lon))
+            if self.abstract_map:
+                self._update_guidance_view(data)
+            else:
+                self.map_view.center_on(float(lat),float(lon))
             if self._marker is None:
                 self._marker=TractorMarker(lat=float(lat),lon=float(lon),source=str(TRACTOR_ICON),size=(dp(48),dp(48)))
                 self.map_view.add_widget(self._marker)
@@ -630,13 +642,60 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                                    self.navigator.track.get('coordinates'),
                                    heading_valid=bool(data.get('imu_valid')))
 
+    def _update_guidance_view(self, data):
+        """Ruhige, geschwindigkeitsabhängige 2D-Nahansicht ohne Kartenkacheln.
+
+        MapView bleibt nordorientiert. Eine Drehung nur des Traktors ist
+        sicherer als eine Drehung des MapView-Canvas (Layer/Touch-Koordinaten).
+        """
+        if not self.map_view:
+            return
+        try:
+            lat=float(data['latitude'])
+            lon=float(data['longitude'])
+            speed=max(0.,float(data.get('speed_mps') or 0.))
+            if not (math.isfinite(lat) and math.isfinite(lon) and math.isfinite(speed)):
+                return
+        except (KeyError,ValueError,TypeError):
+            return
+        # Geschwindigkeitsstufen mit Hysterese gegen GPS-bedingtes Zoom-Flackern.
+        target=20 if speed<1.5 else 19 if speed<3.5 else 18 if speed<7 else 17
+        current=self._guidance_zoom
+        if current is None:
+            current=int(self.map_view.zoom)
+        if target>current and speed>({17:0,18:6.0,19:3.0,20:1.1}.get(target,0)):
+            target=current
+        elif target<current and speed<({17:7.5,18:4.0,19:1.9}.get(target,0)):
+            target=current
+        # Höchstens eine Zoomstufe je Aktualisierung.
+        if target!=current:
+            current+=1 if target>current else -1
+        self._guidance_zoom=current
+        if self.map_view.zoom!=current:
+            self.map_view.zoom=current
+        # Der Traktor erscheint etwa bei 35 % der Kartenhöhe.
+        # Versatz wird in Mercator-Pixeln für die aktuelle Zoomstufe berechnet.
+        height=max(0.,float(self.map_view.height))
+        if height>100:
+            world=256.*(2.**current)
+            y=(1.-math.asinh(math.tan(math.radians(max(-85.,min(85.,lat)))))/math.pi)/2.
+            y-=height*.15/world
+            y=max(1e-9,min(1.-1e-9,y))
+            center_lat=math.degrees(math.atan(math.sinh(math.pi*(1.-2.*y))))
+        else:
+            center_lat=lat
+        self.map_view.center_on(center_lat,lon)
+
     def _scale_tractor(self):
         if not self._marker or not self.map_view:
             return
         from pytrac_kivy.ui.map_scale import meters_to_pixels
-        # Traktor als ca. 4,5 m langes Symbol; aus Darstellungsgründen begrenzt.
         px=meters_to_pixels(self.map_view,self._marker.lat,self._marker.lon,4.5)
-        length=max(dp(14),min(dp(190),px))
+        if self.abstract_map:
+            # Mindestgröße für gute Erkennbarkeit auf kleinen Touchscreens.
+            length=max(dp(66),min(dp(150),px*1.45))
+        else:
+            length=max(dp(14),min(dp(190),px))
         self._marker.size=(length*.65,length)
 
     def stop(self):
