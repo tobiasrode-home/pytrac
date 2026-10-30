@@ -180,7 +180,7 @@ class Precision2D(Widget):
             if nav and nav.last_fix:
                 try:
                     offset=float(nav.last_fix['signed_offset_m'])
-                    direction='LINKS' if offset>0 else 'RECHTS' if offset<0 else 'MITTE'
+                    direction='LINKS DER SPUR' if offset>0 else 'RECHTS DER SPUR' if offset<0 else 'AUF SPUR'
                     self._panel(cx-dp(115),y0+h-dp(73),dp(230),dp(53))
                     self._text(f'{abs(offset)*100:.0f} cm   {direction}',cx,y0+h-dp(46),20,(.65,1,.79,1))
                 except (KeyError,ValueError,TypeError):pass

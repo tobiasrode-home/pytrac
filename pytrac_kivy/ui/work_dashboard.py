@@ -557,8 +557,6 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         speed=data.get('speed_mps')
         self.speed_label.text=(f'Geschwindigkeit: {float(speed)*3.6:.1f} km/h'
                                if speed is not None else 'Geschwindigkeit: —')
-        if self.abstract_map:
-            self.precision_view.update(data,self.navigator)
         if valid and self.map_view and TractorMarker and not self.abstract_map:
             if self.abstract_map:
                 self._update_guidance_view(data)
@@ -634,6 +632,8 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         elif not valid:
             self.steering_bar.update(None)
             self.message_label.text=str(data.get('reason') or 'Kein gültiger GPS-Fix')
+        if self.abstract_map:
+            self.precision_view.update(data,self.navigator)
         self.update_selection()
         if self.on_status:self.on_status(self.message_label.text)
 
