@@ -13,7 +13,11 @@ const PyTracExport=(()=>{
      const histories=[];
      for(const plan of items){
        const points=await get(`/api/work-plannings/${encodeURIComponent(plan.id)}/progress`);
-       histories.push({planning_id:plan.id,planning_name:plan.name,points});
+       histories.push({
+  planning_id: plan.id,
+  planning_name: plan.name,
+  points: points.points
+});
      }
      return histories;
    }
