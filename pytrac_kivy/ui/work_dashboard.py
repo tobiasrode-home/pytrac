@@ -75,12 +75,7 @@ class WorkDashboard(BoxLayout):
         # Die Lenkhilfe belegt die gesamte Displaybreite und steht ganz oben.
         self.steering_bar=SteeringBar(size_hint_y=None,height=dp(86))
         self.add_widget(self.steering_bar)
-        # Kompakte, durchgehende Statuszeile unter der Lenkempfehlung.
-        self.selection_label=self._label('',height=36)
-        self.selection_label.font_size='13sp'
-        self.selection_label.shorten=True
-        self.selection_label.shorten_from='right'
-        self.add_widget(self.selection_label)
+        # Status erscheint direkt als HUD im 2D-Bild, nicht als eigene Zeile.
         self._popup=None
         self._popup_key=None
         self._dismissed_event=None
@@ -278,10 +273,7 @@ class WorkDashboard(BoxLayout):
             speed_text='— km/h'
         quality=(self._latest_state or {}).get('gps_fix_quality')
         gps_status=({4:'RTK Fix',5:'RTK Float',2:'DGPS'}.get(quality,'GPS') if valid else 'N/A')
-        self.selection_label.text=(
-            f"GPS: {gps_status}   |   Tempo: {speed_text}   |   Spur: {track}   |   "
-            f"Arbeitsgerät: {implement}   |   Arbeit: {work} "
-            f"({name('tractor')}, {name('implement')}, {name('field')}, ID {ident})")
+        self.precision_view.set_status(gps_status,track,implement)
 
     def selection_changed(self):
         self.update_selection()

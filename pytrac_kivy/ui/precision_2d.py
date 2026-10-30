@@ -14,6 +14,7 @@ class Precision2D(Widget):
         super().__init__(**kwargs)
         self.state = None
         self.navigator = None
+        self.hud_status = ("N/A", "—/—", "Bereit")
         self.zoom_m = 65.0
         self._textures = {}
         for name in ('tractor', 'terrain'):
@@ -24,6 +25,12 @@ class Precision2D(Widget):
             except Exception:
                 self._textures[name] = None
         self.bind(pos=self.redraw, size=self.redraw)
+
+    def set_status(self, gps, track, implement):
+        status = (str(gps), str(track), str(implement))
+        if status != self.hud_status:
+            self.hud_status = status
+            self.redraw()
 
     def update(self, state, navigator):
         self.state = state
@@ -142,6 +149,16 @@ class Precision2D(Widget):
                     RoundedRectangle(pos=(cx-tw*.32,cy-th*.40),size=(tw*.64,th*.8),radius=[dp(10)])
                 Color(.60,1,.80,.9)
                 Line(circle=(cx,cy,dp(7)),width=dp(1.4))
+            # Drei kompakte Statuskarten am linken Rand statt einer Statusleiste.
+            # Nur die kartenlose 2D-Ansicht nutzt diese Karten.
+            status_width = min(dp(142), max(dp(95), w*.25))
+            status_top = y0+h-dp(92)
+            for idx,(caption,value) in enumerate(zip(
+                    ('GPS', 'SPUR', 'ARBEITSGERÄT'), self.hud_status)):
+                sy = status_top - idx*dp(68)
+                self._panel(x0+dp(12),sy-dp(56),status_width,dp(58),.93)
+                self._text(caption,x0+dp(12)+status_width/2,sy-dp(12),10,(.49,.70,.71,1),False)
+                self._text(value,x0+dp(12)+status_width/2,sy-dp(37),14,(.89,.96,.96,1))
             # HUD-Elemente unabhängig von gültigen GPS-Daten
             pad=dp(12)
             self._panel(x0+pad,y0+pad,dp(148),dp(63))
@@ -156,6 +173,6 @@ class Precision2D(Widget):
                 try:
                     offset=float(nav.last_fix['signed_offset_m'])
                     direction='LINKS' if offset>0 else 'RECHTS' if offset<0 else 'MITTE'
-                    self._panel(cx-dp(115),y0+h-dp(133),dp(230),dp(53))
-                    self._text(f'{abs(offset)*100:.0f} cm   {direction}',cx,y0+h-dp(106),20,(.65,1,.79,1))
+                    self._panel(cx-dp(115),y0+h-dp(73),dp(230),dp(53))
+                    self._text(f'{abs(offset)*100:.0f} cm   {direction}',cx,y0+h-dp(46),20,(.65,1,.79,1))
                 except (KeyError,ValueError,TypeError):pass
