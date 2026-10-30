@@ -149,16 +149,24 @@ class Precision2D(Widget):
                     RoundedRectangle(pos=(cx-tw*.32,cy-th*.40),size=(tw*.64,th*.8),radius=[dp(10)])
                 Color(.60,1,.80,.9)
                 Line(circle=(cx,cy,dp(7)),width=dp(1.4))
-            # Drei kompakte Statuskarten am linken Rand statt einer Statusleiste.
-            # Nur die kartenlose 2D-Ansicht nutzt diese Karten.
-            status_width = min(dp(142), max(dp(95), w*.25))
-            status_top = y0+h-dp(92)
-            for idx,(caption,value) in enumerate(zip(
-                    ('GPS', 'SPUR', 'ARBEITSGERÄT'), self.hud_status)):
-                sy = status_top - idx*dp(68)
-                self._panel(x0+dp(12),sy-dp(56),status_width,dp(58),.93)
-                self._text(caption,x0+dp(12)+status_width/2,sy-dp(12),10,(.49,.70,.71,1),False)
-                self._text(value,x0+dp(12)+status_width/2,sy-dp(37),14,(.89,.96,.96,1))
+            # Statuskarten an festen Bildschirmecken, ohne separate Statusleiste.
+            pad = dp(12)
+            status_width = min(dp(142), max(dp(95), w * .25))
+            status_height = dp(58)
+            def status_card(caption, value, sx, sy):
+                self._panel(sx, sy, status_width, status_height, .93)
+                self._text(caption, sx + status_width / 2, sy + dp(43),
+                           10, (.49, .70, .71, 1), False)
+                self._text(value, sx + status_width / 2, sy + dp(18),
+                           14, (.89, .96, .96, 1))
+
+            gps, track, implement = self.hud_status
+            # GPS oben links, Arbeitsgerät oben rechts.
+            status_card('GPS', gps, x0 + pad, y0 + h - pad - status_height)
+            status_card('ARBEITSGERÄT', implement,
+                        x0 + w - pad - status_width, y0 + h - pad - status_height)
+            # Spur unten links, direkt über der Geschwindigkeitskarte.
+            status_card('SPUR', track, x0 + pad, y0 + pad + dp(63) + dp(8))
             # HUD-Elemente unabhängig von gültigen GPS-Daten
             pad=dp(12)
             self._panel(x0+pad,y0+pad,dp(148),dp(63))
