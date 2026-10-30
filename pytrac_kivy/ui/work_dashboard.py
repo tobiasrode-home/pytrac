@@ -16,6 +16,7 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.widget import Widget
 
+from pytrac_kivy.ui.precision_2d import Precision2D
 from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
 from pytrac_kivy.ui.steering_bar import SteeringBar
 from pytrac_kivy.ui.map_autozoom import fit_field_zoom
@@ -95,6 +96,7 @@ class WorkDashboard(BoxLayout):
 
         body=BoxLayout(spacing=dp(8))
         self.add_widget(body)
+        self.precision_view=Precision2D()
         if MapView is not None:
             self.map_view=MapView(lat=51.3,lon=9.5,zoom=14)
             self.field_overlay=FieldOverlay(self.map_view)
@@ -104,9 +106,12 @@ class WorkDashboard(BoxLayout):
             self.map_view.add_layer(self.guidance_overlay)
             self.map_view.bind(zoom=lambda *_:self._scale_tractor())
             body.add_widget(self.map_view)
+            body.add_widget(self.precision_view)
+            self.map_view.size_hint_x=0
+            self.map_view.width=0
         else:
             self.map_view=self.field_overlay=self.guidance_overlay=None
-            body.add_widget(Label(text='Karte nicht verfügbar: kivy-garden.mapview installieren'))
+            body.add_widget(self.precision_view)
 
         # Interne Statuslabels bleiben für bestehende Abläufe und Fehlermeldungen
         # erhalten, werden aber NICHT als rechte Seitenleiste angezeigt.
@@ -155,6 +160,11 @@ class WorkDashboard(BoxLayout):
 
     def toggle_map_mode(self):
         self.abstract_map=not self.abstract_map
+        self.precision_view.size_hint_x=1 if self.abstract_map else 0
+        self.precision_view.width=0 if not self.abstract_map else self.precision_view.width
+        if self.map_view:
+            self.map_view.size_hint_x=0 if self.abstract_map else 1
+            self.map_view.width=0 if self.abstract_map else self.map_view.width
         if self.field_overlay:
             self.field_overlay.set_abstract(self.abstract_map)
         self._guidance_zoom=None
@@ -555,7 +565,9 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         speed=data.get('speed_mps')
         self.speed_label.text=(f'Geschwindigkeit: {float(speed)*3.6:.1f} km/h'
                                if speed is not None else 'Geschwindigkeit: —')
-        if valid and self.map_view and TractorMarker:
+        if self.abstract_map:
+            self.precision_view.update(data,self.navigator)
+        if valid and self.map_view and TractorMarker and not self.abstract_map:
             if self.abstract_map:
                 self._update_guidance_view(data)
             else:
