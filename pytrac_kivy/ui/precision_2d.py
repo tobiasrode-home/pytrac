@@ -145,7 +145,6 @@ class Precision2D(Widget):
             # HUD-Elemente unabhängig von gültigen GPS-Daten
             pad=dp(12)
             self._panel(x0+pad,y0+h-dp(70),w-2*pad,dp(58))
-            self._text('PYTRAC   /   SPURFÜHRUNG',cx,y0+h-dp(40),15,(.80,.98,.91,1))
             self._panel(x0+pad,y0+pad,dp(148),dp(63))
             try:speed=f'{float(state.get("speed_mps") or 0)*3.6:.1f}'
             except (ValueError,TypeError):speed='–'
