@@ -73,7 +73,7 @@ class WorkDashboard(BoxLayout):
         self._refresh_event=None
 
         # Die Lenkhilfe belegt die gesamte Displaybreite und steht ganz oben.
-        self.steering_bar=SteeringBar(size_hint_y=None,height=dp(86))
+        self.steering_bar=SteeringBar(size_hint_y=None,height=dp(51))
         self.add_widget(self.steering_bar)
         # Status erscheint direkt als HUD im 2D-Bild, nicht als eigene Zeile.
         self._popup=None
@@ -633,6 +633,7 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
             self.steering_bar.update(None)
             self.message_label.text=str(data.get('reason') or 'Kein gültiger GPS-Fix')
         if self.abstract_map:
+            self.precision_view.set_guidance_text(self.steering_bar.label.text)
             self.precision_view.update(data,self.navigator)
         self.update_selection()
         if self.on_status:self.on_status(self.message_label.text)

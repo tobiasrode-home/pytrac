@@ -15,6 +15,7 @@ class Precision2D(Widget):
         self.state = None
         self.navigator = None
         self.hud_status = ("N/A", "—/—", "Bereit")
+        self.guidance_text = "Lenkhilfe: kein GPS / keine Spur"
         self.zoom_m = 65.0
         self._textures = {}
         for name in ('tractor', 'terrain'):
@@ -31,6 +32,9 @@ class Precision2D(Widget):
         if status != self.hud_status:
             self.hud_status = status
             self.redraw()
+
+    def set_guidance_text(self, value):
+        self.guidance_text = str(value)
 
     def update(self, state, navigator):
         self.state = state
@@ -177,10 +181,13 @@ class Precision2D(Widget):
             self._panel(x0+w-dp(160),y0+pad,dp(148),dp(63))
             self._text(f'{self.zoom_m:.0f} m',x0+w-dp(86),y0+pad+dp(36),18)
             self._text('SICHTBEREICH',x0+w-dp(86),y0+pad+dp(14),9,(.49,.70,.71,1),False)
-            if nav and nav.last_fix:
-                try:
-                    offset=float(nav.last_fix['signed_offset_m'])
-                    direction='LINKS DER SPUR' if offset>0 else 'RECHTS DER SPUR' if offset<0 else 'AUF SPUR'
-                    self._panel(cx-dp(115),y0+h-dp(73),dp(230),dp(53))
-                    self._text(f'{abs(offset)*100:.0f} cm   {direction}',cx,y0+h-dp(46),20,(.65,1,.79,1))
-                except (KeyError,ValueError,TypeError):pass
+            # Gleiche Korrekturanweisung wie die obere Lenkhilfe, kein zweites Vorzeichenmodell.
+            guidance = self.guidance_text
+            if guidance.startswith('Lenkhilfe:'):
+                guidance = 'KEIN GPS / KEINE SPUR'
+            elif 'korrigieren' in guidance:
+                guidance = guidance.replace(' korrigieren · ', ' · ').upper()
+            else:
+                guidance = guidance.upper()
+            self._panel(cx-dp(135), y0+h-dp(73), dp(270), dp(53))
+            self._text(guidance, cx, y0+h-dp(46), 18, (.65,1,.79,1))

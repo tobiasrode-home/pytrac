@@ -50,7 +50,7 @@ class SteeringBar(BoxLayout):
         self.label = Label(text='Lenkhilfe: kein GPS / keine Spur', size_hint_y=None,
                            height=dp(22), font_size='15sp', bold=True)
         self.indicator = SteeringIndicator()
-        self.add_widget(self.label)
+        # Text nicht mehr als eigene Zeile anzeigen; Wert steht im 2D-HUD.
         self.add_widget(self.indicator)
 
     def update(self, signed_offset_m=None, reverse=False):
