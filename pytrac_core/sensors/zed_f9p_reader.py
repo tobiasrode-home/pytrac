@@ -1,6 +1,3 @@
-
-    
-  
 """USB ZED-F9P GNSS + optional NTRIP RTCM forwarding; existing GPS callback contract."""
 import base64
 from dataclasses import replace
@@ -129,4 +126,40 @@ class ZedF9pReader(GpsReader):
                     log.warning('[ZED-F9P] NTRIP: %s; neuer Versuch in 5 s', exc)
                     disconnected.wait(5)
         except Exception:
+            log.exception('[ZED-F9P] NTRIP-Konfiguration fehlgeschlagen')
 
+    def run(self, stop_event: threading.Event):
+        if not self.port:
+            log.error('[ZED-F9P] GPS_PORT fehlt. Beispiel /dev/serial/by-id/...')
+            return
+        while not stop_event.is_set():
+            disconnected = threading.Event()
+            try:
+                with serial.Serial(self.port, self.baudrate, timeout=0.2, write_timeout=2) as uart:
+                    log.warning('[ZED-F9P] USB-GNSS verbunden: %s', self.port)
+                    self._reset_stats()
+                    worker = threading.Thread(
+                        target=self._ntrip_worker,
+                        args=(uart, stop_event, disconnected), daemon=True
+                    )
+                    worker.start()
+                    try:
+                        while not stop_event.is_set():
+                            raw = uart.readline()
+                            if not raw:
+                                continue
+                            try:
+                                line = raw.decode('ascii').strip()
+                            except UnicodeDecodeError:
+                                continue
+                            if not line.startswith('$'):
+                                continue
+                            measurement = self._handle_sentence(line)
+                            if measurement and self.on_measurement:
+                                self.on_measurement(measurement)
+                    finally:
+                        disconnected.set()
+                        worker.join(timeout=3)
+            except (serial.SerialException, OSError) as exc:
+                log.warning('[ZED-F9P] USB-Verbindung: %s', exc)
+            stop_event.wait(self.reconnect_delay_s)
