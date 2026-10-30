@@ -144,7 +144,6 @@ class Precision2D(Widget):
                 Line(circle=(cx,cy,dp(7)),width=dp(1.4))
             # HUD-Elemente unabhängig von gültigen GPS-Daten
             pad=dp(12)
-            self._panel(x0+pad,y0+h-dp(70),w-2*pad,dp(58))
             self._panel(x0+pad,y0+pad,dp(148),dp(63))
             try:speed=f'{float(state.get("speed_mps") or 0)*3.6:.1f}'
             except (ValueError,TypeError):speed='–'
