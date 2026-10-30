@@ -151,7 +151,18 @@ def import_data(db, payload, allow_legacy_id_matching=False):
                 else:
                     raise ValueError(f'Arbeitshistorie: Arbeitsplan {old_plan} fehlt.')
         plan_id = maps['work_plannings'][old_plan]
-        for point in group.get('points', []):
+
+        # Accept both the original export format {"points": {"points": [...]}}
+        # and the corrected export format {"points": [...]}.
+        points = group.get('points', [])
+        if isinstance(points, dict):
+            points = points.get('points', [])
+        if not isinstance(points, list):
+            raise ValueError(
+                f'Arbeitshistorie für Arbeitsplan {old_plan}: points muss eine Liste sein.'
+            )
+
+        for point in points:
             fix_key = str(point['fix_key'])
             existing = db.scalar(select(WorkProgressPoint.id).where(WorkProgressPoint.planning_id == plan_id, WorkProgressPoint.fix_key == fix_key))
             if existing is not None:
