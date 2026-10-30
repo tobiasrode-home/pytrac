@@ -16,6 +16,12 @@ from pytrac_kivy.ui.master_data_screen import MasterDataScreen
 from pytrac_kivy.ui.settings_screen import SettingsScreen
 from pytrac_kivy.ui.wifi_manager import WifiManager
 from pytrac_kivy.ui.work_dashboard import WorkDashboard
+import logging
+
+# HTTP-Abfragen an das lokale Backend nicht mehr als DEBUG ausgeben
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+logging.getLogger("requests.packages.urllib3").setLevel(logging.WARNING)
 
 class PytracKivyApp(App):
     title='PyTrac'
