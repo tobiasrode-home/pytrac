@@ -30,7 +30,7 @@ class Precision2D(Widget):
         self.navigator = navigator
         try:
             speed = max(0.0, float(state.get('speed_mps') or 0))
-            target = 32.0 if speed < 1.5 else 55.0 if speed < 3.5 else 85.0 if speed < 7 else 125.0
+            target = 25.0 if speed < 1.5 else 38.0 if speed < 3.5 else 55.0 if speed < 7 else 75.0
             self.zoom_m += (target - self.zoom_m) * .17
         except (ValueError, TypeError, AttributeError):
             pass
@@ -125,8 +125,12 @@ class Precision2D(Widget):
                         Color(.37,.62,.67,.52)
                         Line(points=pts,width=dp(1.7),joint='round')
                 # Fahrzeug-Schatten und freigestelltes, hochauflösendes Symbol
-                tw=max(dp(74),min(dp(118),w*.19))
-                th=tw*340/240
+                # Traktorsymbol an den echten Kartenmassstab koppeln.
+                # 4.5 m Fahrzeuglaenge; Symbol bleibt nur bei grossem Zoom
+                # durch eine kleine Mindestgroesse lesbar.
+                tractor_length_m = 4.5
+                th = max(dp(38), min(dp(100), tractor_length_m * scale))
+                tw = th * 240 / 340
                 Color(.01,.03,.05,.40)
                 Ellipse(pos=(cx-tw*.57,cy-th*.43-dp(5)),size=(tw*1.14,th*.95))
                 tractor=self._textures.get('tractor')
