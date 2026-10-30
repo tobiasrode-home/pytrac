@@ -7,7 +7,7 @@ Type=simple
 #User=tobi
 WorkingDirectory=/opt/pytrac
 Environment=SDL_VIDEODRIVER=kmsdrm
-ExecStart=/usr/bin/python3 -m uvicorn pytrac_backend:app --host 0.0.0.0 --port 8000 --reload
+ExecStart=/usr/bin/python3 -m uvicorn pytrac_backend:app --host 0.0.0.0 --port 8000 --reload --no-access-log
 Restart=always
 RestartSec=5
 
