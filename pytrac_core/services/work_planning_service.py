@@ -156,6 +156,17 @@ class WorkPlanningService:
         values['created_at'] = datetime.now(timezone.utc)
         row = WorkPlanning(**values)
         self.db.add(row)
+        self.db.flush()
+        # Automatische Spuren werden beim Anlegen dauerhaft gespeichert.
+        # Vorgewendespuren gehören zur selben bearbeitbaren Spurliste.
+        from pytrac_core.api.schemas import GuidanceRequest
+        guidance = self.guidance(GuidanceRequest(**data.model_dump(), output_mode='targets'))
+        tracks = [t['coordinates'] for t in guidance.get('tracks', []) + guidance.get('headland_tracks', [])
+                  if len(t.get('coordinates', [])) >= 2]
+        if not tracks:
+            raise WorkPlanningValidationError('Die Planung enthält keine speicherbaren Fahrspuren.')
+        self.db.execute(text("INSERT INTO work_planning_tracks(planning_id,tracks_json,source) VALUES (:id,:tracks,'automatic')"),
+                        {'id':row.id,'tracks':json.dumps(tracks,separators=(',',':'))})
         self.db.commit()
         self.db.refresh(row)
         return self._read(row)
@@ -175,7 +186,7 @@ class WorkPlanningService:
         from pytrac_core.persistence.models.work_progress import WorkProgressPoint
         from sqlalchemy import delete
         self.db.execute(delete(WorkProgressPoint).where(WorkProgressPoint.planning_id==planning_id))
-        self.db.execute(text('DELETE FROM work_planning_manual_tracks WHERE planning_id=:id'),{'id':planning_id})
+        self.db.execute(text('DELETE FROM work_planning_tracks WHERE planning_id=:id'),{'id':planning_id})
         self.db.delete(row)
         self.db.commit()
 
@@ -225,12 +236,23 @@ class WorkPlanningService:
                 WorkProgressPoint.track_id=="1").order_by(WorkProgressPoint.recorded_at,WorkProgressPoint.id)).all()
             if len(points)>=2:
                 driven=[[p.longitude,p.latitude] for p in points]
-        saved=self.db.execute(text('SELECT tracks_json FROM work_planning_manual_tracks WHERE planning_id=:id'),
-                              {'id':planning_id}).scalar_one_or_none()
-        if saved:
+        saved=self.db.execute(text('SELECT tracks_json,source FROM work_planning_tracks WHERE planning_id=:id'),
+                              {'id':planning_id}).first()
+        if saved and saved.source != 'automatic':
             from pytrac_core.services.guidance.route_planner import manual_track_guidance
             implement=self.db.get(Implement,plan.implement_id)
-            return manual_track_guidance({},json.loads(saved),implement.work_offset_m,implement_lead_m)
+            return manual_track_guidance({},json.loads(saved.tracks_json),implement.work_offset_m,implement_lead_m)
         result=self.guidance(GuidanceRequest(**plan.model_dump(exclude={'id','start_point','created_at'}),
                                              output_mode=output_mode, implement_lead_m=implement_lead_m),driven_reference=driven)
+        # Unveränderte automatisch berechnete Spuren behalten ihre ursprünglichen
+        # Wendemanöver und Geräteereignisse; die gespeicherte Geometrie ist maßgeblich.
+        if saved:
+            stored=json.loads(saved.tracks_json)
+            combined=result.get('tracks',[])+result.get('headland_tracks',[])
+            if len(stored)!=len(combined):
+                raise WorkPlanningValidationError('Gespeicherte Spuranzahl weicht von der Berechnung ab. Bitte Planung prüfen.')
+            for track, coords in zip(combined,stored):
+                track['coordinates']=coords
+            if result.get('tracks'):
+                result['start_point']=result['tracks'][0]['coordinates'][0]
         return result

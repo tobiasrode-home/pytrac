@@ -34,11 +34,12 @@ def init_db() -> None:
             if 'reference_edge_count' not in existing:
                 conn.execute(text("ALTER TABLE work_plannings ADD COLUMN reference_edge_count INTEGER NOT NULL DEFAULT 1"))
 
-    # V40: gespeicherte manuell editierte Fahrspuren in derselben tractor.db.
+    # Einheitliche gespeicherte Fahrspuren für automatische und manuelle Planungen.
     with engine.begin() as conn:
-        conn.execute(text("""CREATE TABLE IF NOT EXISTS work_planning_manual_tracks (
+        conn.execute(text("""CREATE TABLE IF NOT EXISTS work_planning_tracks (
             planning_id INTEGER PRIMARY KEY,
             tracks_json TEXT NOT NULL,
+            source VARCHAR(20) NOT NULL DEFAULT 'manual',
             FOREIGN KEY(planning_id) REFERENCES work_plannings(id) ON DELETE CASCADE
         )"""))
 

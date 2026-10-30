@@ -77,7 +77,7 @@ def create_manual_planning(data: ManualPlanningCreate, db: Session=Depends(get_d
        headland_working_widths=1,headland_start_passes=None,headland_end_passes=None,
        start_point_json=json.dumps(data.tracks[0][0]),created_at=datetime.now(timezone.utc))
     db.add(row);db.flush()
-    db.execute(text('INSERT INTO work_planning_manual_tracks(planning_id,tracks_json) VALUES (:id,:tracks)'),
+    db.execute(text("INSERT INTO work_planning_tracks(planning_id,tracks_json,source) VALUES (:id,:tracks,'manual')"),
        {'id':row.id,'tracks':json.dumps(data.tracks,separators=(',',':'))})
     db.commit();db.refresh(row)
     return {'id':row.id,'track_count':len(data.tracks)}
@@ -113,8 +113,8 @@ def save_manual_tracks(planning_id: int, data: ManualTracksPayload, db: Session=
     field=db.get(Field,plan.field_id)
     validate_manual_tracks(data.tracks,field)
     payload=json.dumps(data.tracks,separators=(',',':'))
-    db.execute(text("""INSERT INTO work_planning_manual_tracks(planning_id,tracks_json)
-        VALUES (:id,:tracks) ON CONFLICT(planning_id) DO UPDATE SET tracks_json=excluded.tracks_json"""),
+    db.execute(text("""INSERT INTO work_planning_tracks(planning_id,tracks_json,source)
+        VALUES (:id,:tracks,'edited') ON CONFLICT(planning_id) DO UPDATE SET tracks_json=excluded.tracks_json,source='edited'"""),
         {'id':planning_id,'tracks':payload})
     db.commit()
     return {'planning_id':planning_id,'track_count':len(data.tracks)}
@@ -122,12 +122,26 @@ def save_manual_tracks(planning_id: int, data: ManualTracksPayload, db: Session=
 @router.get('/{planning_id}/manual-tracks')
 def get_manual_tracks(planning_id: int, db: Session=Depends(get_db)):
     service(db).get(planning_id)
-    row=db.execute(text('SELECT tracks_json FROM work_planning_manual_tracks WHERE planning_id=:id'),{'id':planning_id}).scalar_one_or_none()
+    row=db.execute(text('SELECT tracks_json FROM work_planning_tracks WHERE planning_id=:id'),{'id':planning_id}).scalar_one_or_none()
     return {'tracks':json.loads(row) if row else []}
 
 @router.delete('/{planning_id}/manual-tracks',status_code=204)
 def clear_manual_tracks(planning_id: int,db: Session=Depends(get_db)):
     service(db).get(planning_id)
-    db.execute(text('DELETE FROM work_planning_manual_tracks WHERE planning_id=:id'),{'id':planning_id})
+    db.execute(text('DELETE FROM work_planning_tracks WHERE planning_id=:id'),{'id':planning_id})
     db.commit()
     return Response(status_code=204)
+
+
+# Gemeinsame Fahrspur-API; alte /manual-tracks-Routen bleiben als Alias erhalten.
+@router.get('/{planning_id}/tracks')
+def get_tracks(planning_id: int, db: Session=Depends(get_db)):
+    return get_manual_tracks(planning_id, db)
+
+@router.put('/{planning_id}/tracks')
+def save_tracks(planning_id: int, data: ManualTracksPayload, db: Session=Depends(get_db)):
+    return save_manual_tracks(planning_id, data, db)
+
+@router.delete('/{planning_id}/tracks',status_code=204)
+def clear_tracks(planning_id: int,db: Session=Depends(get_db)):
+    return clear_manual_tracks(planning_id, db)

@@ -3,7 +3,7 @@ from datetime import datetime
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from pytrac_core.persistence.database import get_db
 from pytrac_core.persistence.models.tractor import Tractor
@@ -137,6 +137,25 @@ def import_data(db, payload, allow_legacy_id_matching=False):
             db.flush()
             counts['work_plannings']['new'] += 1
         maps['work_plannings'][old_id] = obj.id
+        # Jede Planung enthält ihre gemeinsamen Fahrspuren direkt im Export.
+        # Bei bereits vorhandenen Spuren nichts unbemerkt überschreiben.
+        if 'tracks' in raw:
+            tracks = raw['tracks']
+            if not isinstance(tracks, list):
+                raise ValueError(f"Arbeitsplan {raw['name']}: tracks muss eine Liste sein.")
+            if tracks:
+                from pytrac_core.api.routers.work_planning import validate_manual_tracks
+                field = db.get(Field, obj.field_id)
+                validate_manual_tracks(tracks, field)
+                existing_tracks = db.execute(text('SELECT tracks_json FROM work_planning_tracks WHERE planning_id=:id'),
+                                             {'id':obj.id}).scalar_one_or_none()
+                if existing_tracks is not None:
+                    if json.loads(existing_tracks) != tracks:
+                        raise ValueError(f"Arbeitsplan '{raw['name']}': vorhandene Fahrspuren weichen vom Import ab. Kein Überschreiben.")
+                else:
+                    db.execute(text('INSERT INTO work_planning_tracks(planning_id,tracks_json,source) VALUES (:id,:tracks,:source)'),
+                               {'id':obj.id, 'tracks':json.dumps(tracks,separators=(',',':')),
+                                'source':raw.get('tracks_source','edited') if raw.get('tracks_source') in ('automatic','edited','manual') else 'edited'})
 
     for group in payload.get('work_history', []):
         old_plan = int(group['planning_id'])
@@ -200,6 +219,11 @@ def export_plannings(db: Session = Depends(get_db)):
         stored = db.get(WorkPlanning, row['id'])
         if stored and stored.guidance_json:
             row['guidance'] = json.loads(stored.guidance_json)
+        saved_tracks = db.execute(text('SELECT tracks_json,source FROM work_planning_tracks WHERE planning_id=:id'),
+                                  {'id':row['id']}).first()
+        if saved_tracks:
+            row['tracks'] = json.loads(saved_tracks.tracks_json)
+            row['tracks_source'] = saved_tracks.source
         for column, name, model in (('tractor_id', 'tractor_name', Tractor),
                                      ('implement_id', 'implement_name', Implement),
                                      ('field_id', 'field_name', Field)):
