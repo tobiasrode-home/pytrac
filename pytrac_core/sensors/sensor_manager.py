@@ -8,14 +8,12 @@ from pytrac_core.sensors.gps_reader import GpsReader
 from pytrac_core.sensors.zed_f9p_reader import ZedF9pReader
 from pytrac_core.sensors.models import VehicleState
 from pytrac_core.sensors.synchronizer import SensorSynchronizer
-from pytrac_core.sensors.diagnostic_logging import configure_sensor_diagnostics
 
 logger=logging.getLogger(__name__)
 
 class SensorManager:
     def __init__(self,gps_port:str,imu_port:str,on_state:Callable[[VehicleState],None],
-                 gps_baudrate:int=9600,imu_baudrate:int=115200,output_rate_hz:float=5.0)->None:
-        configure_sensor_diagnostics()
+                 gps_baudrate:int=9600,imu_baudrate:int=115200,output_rate_hz:float=10.0)->None:
         self.stop_event=threading.Event()
         self.synchronizer=SensorSynchronizer(on_state=on_state,output_rate_hz=output_rate_hz)
         if settings.gps_receiver.lower()=='zed_f9p':
