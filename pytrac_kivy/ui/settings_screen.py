@@ -33,8 +33,8 @@ class SettingsScreen(BoxLayout):
         self.choices={'tractor':[],'implement':[],'field':[]}
         self.selection_buttons={}
         header=BoxLayout(size_hint_y=None,height=dp(50),spacing=dp(6))
+        header.add_widget(self.make_button('Zurück',lambda *_:self.go_back(),width=dp(145)))
         header.add_widget(Label(text='[b]Einstellungen[/b]',markup=True,font_size='25sp'))
-        header.add_widget(self.make_button('Zur Übersicht',lambda *_:self.go_back(),width=dp(180)))
         header.add_widget(self.make_button('Stammdaten',lambda *_:self.open_master_data(),width=dp(180)))
         header.add_widget(self.make_button('Wifi',lambda *_:self.open_wifi_manager(),width=dp(180)))
         self.add_widget(header)

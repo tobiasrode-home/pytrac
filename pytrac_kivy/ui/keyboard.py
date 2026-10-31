@@ -30,7 +30,7 @@ class TouchKeyboard(BoxLayout):
         kwargs.pop("height", None)
         kwargs.pop("size_hint_y", None)
         super().__init__(orientation="vertical", size_hint_y=None, height=dp(205),
-                         spacing=dp(3), padding=dp(3), **kwargs)
+                         spacing=dp(8), padding=dp(8), **kwargs)
         self.target = target
         self.numeric = numeric
         self.on_done_callback = on_done
@@ -46,7 +46,7 @@ class TouchKeyboard(BoxLayout):
 
     def _build(self):
         self.clear_widgets()
-        selector = BoxLayout(orientation="horizontal", spacing=dp(3),
+        selector = BoxLayout(orientation="horizontal", spacing=dp(8),
                              size_hint_y=None, height=dp(34))
         for page in PAGES:
             selector.add_widget(self._button(
@@ -55,15 +55,15 @@ class TouchKeyboard(BoxLayout):
         self.add_widget(selector)
 
         # Die Tastatur passt in den vorhandenen 210-dp-Container der Stammdatenmaske.
-        area = BoxLayout(orientation="vertical", spacing=dp(3))
+        area = BoxLayout(orientation="vertical", spacing=dp(8))
         for chars in ROWS[self.page]:
-            row = BoxLayout(orientation="horizontal", spacing=dp(3))
+            row = BoxLayout(orientation="horizontal", spacing=dp(8))
             for char in chars:
                 row.add_widget(self._button(char, lambda c=char: self.insert_text(c)))
             area.add_widget(row)
         self.add_widget(area)
 
-        bottom = BoxLayout(orientation="horizontal", spacing=dp(3),
+        bottom = BoxLayout(orientation="horizontal", spacing=dp(8),
                            size_hint_y=None, height=dp(38))
         if self.page != "NumPad":
             bottom.add_widget(self._button("Leerzeichen", lambda: self.insert_text(" "), SPECIAL, 13))

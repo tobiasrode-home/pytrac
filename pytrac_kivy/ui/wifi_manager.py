@@ -86,7 +86,6 @@ class WifiManager(BoxLayout):
         self.status = Label(text="WLAN-Status wird geladen ...", size_hint_y=None,
                             height=dp(68), halign="center", valign="middle")
         self.status.bind(size=self._fit_label)
-        self.add_widget(self.status)
         toolbar = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
         for title, cb in (("Zurück", self.go_back), ("WLANs suchen", lambda *_: self.refresh_networks()),
                           ("Gespeicherte WLANs", lambda *_: self.show_profiles())):
@@ -94,6 +93,7 @@ class WifiManager(BoxLayout):
             button.bind(on_release=cb)
             toolbar.add_widget(button)
         self.add_widget(toolbar)
+        self.add_widget(self.status)
         self.network_list = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
         self.network_list.bind(minimum_height=self.network_list.setter("height"))
         scroll = ScrollView()

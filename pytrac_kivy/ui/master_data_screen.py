@@ -32,9 +32,9 @@ class MasterDataScreen(BoxLayout):
         self.choices = {"tractor": [], "implement": [], "field": []}
         header = BoxLayout(orientation="horizontal", size_hint_y=None,
                            height=dp(64), spacing=dp(12))
+        header.add_widget(self.make_button("Zurück", self.go_back, width=dp(150)))
         header.add_widget(Label(text="[b]Stammdaten verwalten[/b]", markup=True,
                                 font_size="24sp", halign="left"))
-        header.add_widget(self.make_button("Zurück", self.go_back, width=dp(170)))
         self.add_widget(header)
         self.add_widget(Label(text="Wähle aus, welche Stammdaten du neu erfassen möchtest.",
                               size_hint_y=None, height=dp(60), halign="left", valign="middle"))
