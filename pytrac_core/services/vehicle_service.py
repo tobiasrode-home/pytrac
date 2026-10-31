@@ -2,6 +2,7 @@
 """Stellt den aktuellen Fahrzeugzustand im Arbeitsspeicher bereit."""
 
 import threading
+import time
 from datetime import datetime, timezone
 
 from pytrac_core.sensors.models import VehicleState
@@ -14,6 +15,7 @@ class VehicleService:
         self._lock = threading.Lock()
         self._last_state: VehicleState | None = None
         self._last_received_at: datetime | None = None
+        self._last_received_monotonic: float | None = None
 
     def update_state(self, state: VehicleState) -> None:
         """
@@ -32,6 +34,7 @@ class VehicleService:
 
             self._last_state = state
             self._last_received_at = datetime.now(timezone.utc)
+            self._last_received_monotonic = time.monotonic()
 
     def get_last_state(self) -> VehicleState | None:
         """Gibt den zuletzt empfangenen Fahrzeugzustand zurück."""
@@ -54,13 +57,10 @@ class VehicleService:
             if self._last_state is None:
                 return False
 
-            if self._last_received_at is None:
+            if self._last_received_monotonic is None:
                 return False
 
-            age = (
-                datetime.now(timezone.utc) - self._last_received_at
-            ).total_seconds()
-
+            age = time.monotonic() - self._last_received_monotonic
             return 0 <= age <= max_age_s
 
     def clear(self) -> None:
@@ -68,3 +68,4 @@ class VehicleService:
         with self._lock:
             self._last_state = None
             self._last_received_at = None
+            self._last_received_monotonic = None
