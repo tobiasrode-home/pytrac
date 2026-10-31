@@ -239,6 +239,8 @@ class WorkDashboard(BoxLayout):
         self.message_label.text=f"{self._recorded_count} GPS-Punkte geladen · letzte Spur gewählt, Gerät erneut bestätigen"
 
     def _draw_progress(self):
+        width=(self.selection.get('implement') or {}).get('working_width_m',0)
+        self.precision_view.set_progress(self.progress_points, width)
         if self.field_overlay:
             self.field_overlay.set_data(field=self.selection.get('field'),track_points=self.progress_points,
                                         working_width_m=(self.selection.get('implement') or {}).get('working_width_m',0))
@@ -393,9 +395,9 @@ MANUELL')
         self.record_override=not self.recording
         self.recording=self.record_override
         self._update_record_button()
-        self.message_label.text=('GPS manuell gestartet – unabhängig vom Gerätestatus'
+        self.message_label.text=('GPS-Aufnahme aktiviert – Arbeitsfläche nur bei aktivem Gerät'
                                  if self.recording else
-                                 'GPS manuell pausiert – unabhängig vom Gerätestatus')
+                                 'GPS-Aufnahme pausiert')
 
     def _show_event_popup(self,action,manual=False):
         if not self.navigator or self._popup is not None:
@@ -571,7 +573,7 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
             heading=data.get('heading_deg')
             if heading is not None and data.get('imu_valid'):
                 self._marker.set_heading(heading)
-        if valid and self.recording and self.navigator and (self.navigator.state.active or self.record_override is True):
+        if valid and self.recording and self.navigator and self.navigator.state.active:
             try:
                 # Sensor-Zeitstempel verhindert wiederholtes Speichern desselben Fixes.
                 signature=(data.get('timestamp'),float(data.get('latitude',lat)),

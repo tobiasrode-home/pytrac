@@ -1,5 +1,6 @@
 """Modernes minimalistisches PyTrac-2D-Terminal (reine Anzeige)."""
 import math
+from datetime import datetime
 from pathlib import Path
 from kivy.uix.widget import Widget
 from kivy.graphics import Color, Rectangle, Line, Ellipse, RoundedRectangle
@@ -14,6 +15,8 @@ class Precision2D(Widget):
         super().__init__(**kwargs)
         self.state = None
         self.navigator = None
+        self.progress_points = []
+        self.working_width_m = 0.0
         self.hud_status = ("N/A", "—/—", "Bereit")
         self.guidance_text = "Lenkhilfe: kein GPS / keine Spur"
         self.zoom_m = 65.0
@@ -32,6 +35,15 @@ class Precision2D(Widget):
         if status != self.hud_status:
             self.hud_status = status
             self.redraw()
+
+    def set_progress(self, points, working_width_m):
+        """Gespeicherte, bei aktivem Gerät aufgezeichnete GPS-Arbeitspunkte."""
+        self.progress_points = list(points or [])
+        try:
+            self.working_width_m = max(0.0, float(working_width_m or 0))
+        except (ValueError, TypeError):
+            self.working_width_m = 0.0
+        self.redraw()
 
     def set_guidance_text(self, value):
         self.guidance_text = str(value)
@@ -106,35 +118,96 @@ class Precision2D(Widget):
                     dx=(float(p[0])-lon)*lon_scale
                     dy=(float(p[1])-lat)*lat_scale
                     return (cx+(dx*east+dy*north)*scale,cy+(dx*ahead_e+dy*ahead_n)*scale)
-                try:
-                    imp=nav.planning.get('working_width_m') if nav else None
-                    band=max(dp(18),min(w*.5,float(imp or 3)*scale))
-                except (TypeError,ValueError,AttributeError):band=dp(24)
-                Color(.12,.84,.61,.11)
-                Rectangle(pos=(cx-band/2,y0),size=(band,max(0,cy-y0)))
-                Color(.32,.91,.69,.48)
-                Line(points=[cx-band/2,y0,cx-band/2,cy],width=dp(1.2))
-                Line(points=[cx+band/2,y0,cx+band/2,cy],width=dp(1.2))
+                # Arbeitsbreite: nur gespeicherte Arbeitspunkte verwenden. Kein
+                # "Live-Streifen" hinter dem Traktor bei ausgeschaltetem Gerät.
+                width_m = self.working_width_m
+                if width_m > 0 and self.progress_points:
+                    half = width_m * scale / 2
+                    previous = None
+                    for point in self.progress_points:
+                        try:
+                            pos = xy((point['longitude'], point['latitude']))
+                            lat_p = float(point['latitude'])
+                            lon_p = float(point['longitude'])
+                            key = (str(point.get('phase')), str(point.get('track_id')))
+                            timestamp = point.get('recorded_at')
+                        except (KeyError, TypeError, ValueError, OverflowError):
+                            previous = None
+                            continue
+                        if previous is not None and key == previous[2]:
+                            # Große Sprünge nicht als bearbeitete Fläche verbinden.
+                            dx = (lon_p-previous[3])*lon_scale
+                            dy = (lat_p-previous[4])*lat_scale
+                            distance = math.hypot(dx,dy)
+                            time_ok = True
+                            try:
+                                t0 = datetime.fromisoformat(previous[1].replace('Z','+00:00'))
+                                t1 = datetime.fromisoformat(timestamp.replace('Z','+00:00'))
+                                time_ok = 0 <= (t1-t0).total_seconds() <= 15
+                            except (AttributeError, ValueError, TypeError):
+                                time_ok = False
+                            if time_ok and 0 < distance <= max(8.0, width_m * 2.5):
+                                x1,y1 = previous[0]
+                                x2,y2 = pos
+                                vx,vy = x2-x1,y2-y1
+                                length = math.hypot(vx,vy)
+                                if length > .01:
+                                    nx,ny = -vy/length*half, vx/length*half
+                                    from kivy.graphics import Mesh
+                                    Color(.49,.68,.64,.31)
+                                    Mesh(vertices=[x1+nx,y1+ny,0,0,
+                                                   x1-nx,y1-ny,0,0,
+                                                   x2+nx,y2+ny,0,0,
+                                                   x2-nx,y2-ny,0,0],
+                                         indices=[0,1,2,2,1,3],mode='triangles')
+                        previous = (pos,timestamp,key,lon_p,lat_p)
                 tracks=nav.tracks if nav else []
                 active=nav.track if nav else None
                 active_id=active.get('id') if active else None
+                try:
+                    next_id=tracks[nav.state.track_index+1].get('id')
+                except (AttributeError, IndexError, TypeError):
+                    next_id=None
                 for track in tracks:
                     coords=track.get('coordinates') or []
                     if len(coords)<2:continue
-                    pts=[]
+                    points=[]
                     for p in coords:
-                        try:pts.extend(xy(p))
+                        try:points.append(xy(p))
                         except (TypeError,ValueError,IndexError):continue
-                    if len(pts)<4:continue
-                    selected=track.get('id')==active_id
+                    if len(points)<2:continue
+                    pts=[v for point in points for v in point]
+                    selected=str(track.get('id'))==str(active_id)
+                    following=next_id is not None and str(track.get('id'))==str(next_id)
                     if selected:
+                        color=(.39,1,.75,.95)
                         Color(.14,.98,.69,.12)
                         Line(points=pts,width=dp(11),joint='round')
-                        Color(.39,1,.75,.95)
+                        Color(*color)
                         Line(points=pts,width=dp(3.5),joint='round')
+                    elif following:
+                        color=(.98,.76,.30,.94)
+                        Color(*color)
+                        Line(points=pts,width=dp(3),joint='round')
                     else:
-                        Color(.37,.62,.67,.52)
+                        color=(.37,.62,.67,.60)
+                        Color(*color)
                         Line(points=pts,width=dp(1.7),joint='round')
+                    # Pfeil am gespeicherten Spuranfang; zeigt zur zweiten Koordinate.
+                    start=points[0]
+                    target=next((p for p in points[1:]
+                                 if math.hypot(p[0]-start[0],p[1]-start[1])>dp(3)),None)
+                    if target is not None:
+                        vx,vy=target[0]-start[0],target[1]-start[1]
+                        length=math.hypot(vx,vy)
+                        ux,uy=vx/length,vy/length
+                        arrow=dp(12)
+                        tip=(start[0]+ux*arrow,start[1]+uy*arrow)
+                        left=(start[0]-uy*arrow*.48,start[1]+ux*arrow*.48)
+                        right=(start[0]+uy*arrow*.48,start[1]-ux*arrow*.48)
+                        Color(*color)
+                        Line(points=[left[0],left[1],tip[0],tip[1],right[0],right[1]],
+                             width=dp(2.4),joint='round',cap='round')
                 # Fahrzeug-Schatten und freigestelltes, hochauflösendes Symbol
                 # Traktorsymbol an den echten Kartenmassstab koppeln.
                 # 4.5 m Fahrzeuglaenge; Symbol bleibt nur bei grossem Zoom
