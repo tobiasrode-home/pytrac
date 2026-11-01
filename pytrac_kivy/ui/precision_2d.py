@@ -79,12 +79,14 @@ class Precision2D(Widget):
         Line(rounded_rectangle=(x,y,w,h,dp(12)),width=1)
 
     def redraw(self, *_):
-        self.canvas.clear()
+        # Nur die Karten-Zeichenebene leeren; Kind-Widgets (z.B. der
+        # Gerätebutton) behalten ihre eigenen Canvas-Anweisungen.
+        self.canvas.before.clear()
         x0,y0=self.pos
         w,h=self.size
         if w < 10 or h < 10:
             return
-        with self.canvas:
+        with self.canvas.before:
             Color(*((.047,.092,.12,1) if self.dark_mode else (1,1,1,1)))
             Rectangle(pos=self.pos,size=self.size)
             terrain=self._textures.get('terrain')
