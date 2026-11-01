@@ -9,6 +9,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.switch import Switch
+from kivy.uix.spinner import Spinner
 from pytrac_kivy.ui.display_brightness import read_brightness, set_brightness
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
 from pytrac_kivy.ui.work_order_dialog import open_work_order_dialog
@@ -17,7 +18,8 @@ from pytrac_kivy.ui.create_work_order import open_create_work_order
 class SettingsScreen(BoxLayout):
     def __init__(self,api_url,selection,api_client=None,on_back=None,
                  on_selection_changed=None,on_master_data=None,on_wifi_manager=None,
-                 on_work_order_loaded=None,on_work_order_reset=None,on_navigation_settings=None,**kwargs):
+                 on_work_order_loaded=None,on_work_order_reset=None,on_navigation_settings=None,
+                 on_work_mode=None,on_device_settings=None,**kwargs):
         super().__init__(orientation='vertical',padding=dp(9),spacing=dp(5),**kwargs)
         self.api_url=api_url.rstrip('/')
         self.api_client=api_client
@@ -29,6 +31,9 @@ class SettingsScreen(BoxLayout):
         self.on_work_order_loaded=on_work_order_loaded
         self.on_work_order_reset=on_work_order_reset
         self.on_navigation_settings=on_navigation_settings
+        self.on_work_mode=on_work_mode
+        self.on_device_settings=on_device_settings
+        self.work_mode="confirmed"
         self.navigation_options={"imu_heading_offset_deg":0.0,"imu_roll_offset_deg":0.0}
         self.choices={'tractor':[],'implement':[],'field':[]}
         self.selection_buttons={}
@@ -36,7 +41,8 @@ class SettingsScreen(BoxLayout):
         header.add_widget(self.make_button('Zurück',lambda *_:self.go_back(),width=dp(145)))
         header.add_widget(Label(text='[b]Einstellungen[/b]',markup=True,font_size='25sp'))
         header.add_widget(self.make_button('Stammdaten',lambda *_:self.open_master_data(),width=dp(180)))
-        header.add_widget(self.make_button('Wifi',lambda *_:self.open_wifi_manager(),width=dp(180)))
+        header.add_widget(self.make_button('Wifi',lambda *_:self.open_wifi_manager(),width=dp(135)))
+        header.add_widget(self.make_button('Geräte Einstellungen',lambda *_:self.open_device_settings(),width=dp(230)))
         self.add_widget(header)
         self.add_widget(Label(text='Arbeitsauftrag auswählen',size_hint_y=None,height=dp(25),bold=True,font_size='18sp'))
         self.work_order_button=self.make_button('Gespeicherten Arbeitsauftrag laden',lambda *_:self.open_work_order(),height=dp(48))
@@ -59,40 +65,12 @@ class SettingsScreen(BoxLayout):
         # Freier Raum wächst mit der Displayhöhe. Navigationseinstellungen
         # sitzen direkt über der Helligkeit am unteren Displayrand.
         self.add_widget(BoxLayout(size_hint_y=1))
-        self._loading_nav_settings=True
-        self.add_widget(Label(text="GPS und IMU",size_hint_y=None,height=dp(26),
-                              bold=True,font_size="18sp"))
-        nav_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
-        nav_row.add_widget(Label(text="Ausrichtung (°)",size_hint_x=.24))
-        self.heading_offset_input=TextInput(text="0",multiline=False,size_hint_x=.18)
-        bind_fullscreen_keyboard(self.heading_offset_input,"Ausrichtungs-Offset in Grad")
-        nav_row.add_widget(self.heading_offset_input)
-        nav_row.add_widget(Label(text="Neigung (°)",size_hint_x=.24))
-        self.roll_offset_input=TextInput(text="0",multiline=False,size_hint_x=.18)
-        bind_fullscreen_keyboard(self.roll_offset_input,"Neigungs-Offset in Grad (Roll)")
-        nav_row.add_widget(self.roll_offset_input)
-        self.add_widget(nav_row)
-        self.add_widget(self.make_button("GPS-/IMU-Einstellungen speichern",
-                                         lambda *_:self.save_navigation_settings(),
-                                         height=dp(44)))
-        self.add_widget(BoxLayout(size_hint_y=None,height=dp(12)))
+        # Geräteeinstellungen liegen auf einem eigenen Bildschirm.
+        # Beim Öffnen der Einstellungen werden die aktuellen Werte weiterhin
+        # geladen und an das Dashboard weitergereicht.
         self._loading_nav_settings=False
         self._nav_request_serial=0
         self.load_navigation_settings()
-        brightness=read_brightness()
-        brightness_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
-        brightness_row.add_widget(Label(text="Displayhelligkeit",size_hint_x=None,width=dp(160)))
-        self.brightness_buttons={}
-        for level in (25,50,75,100):
-            button=self.make_button(f"{level} %",lambda _btn,level=level:self.set_display_brightness(level))
-            button.disabled=brightness is None
-            brightness_row.add_widget(button)
-            self.brightness_buttons[level]=button
-        self.add_widget(brightness_row)
-        self.brightness_label=Label(text=(f"Aktuell: {brightness} %" if brightness is not None else
-                                          "Displayhelligkeit nicht verfügbar"),
-                                    size_hint_y=None,height=dp(24))
-        self.add_widget(self.brightness_label)
         self.load_choices()
 
     def load_navigation_settings(self):
@@ -125,47 +103,23 @@ class SettingsScreen(BoxLayout):
               size_hint=(.8,.38)).open()
 
     def apply_navigation_settings(self,data):
-        self._loading_nav_settings=True
+        self.navigation_options=dict(data)
+        self.work_mode=data.get("work_mode", "confirmed")
+        if self.on_work_mode:
+            self.on_work_mode(self.work_mode)
+        if self.on_navigation_settings:
+            self.on_navigation_settings(self.navigation_options)
+        # Gespeicherte Displayhelligkeit nach App-Start wiederherstellen.
         try:
-            self.navigation_options=dict(data)
-            self.heading_offset_input.text=str(data.get("imu_heading_offset_deg",0.0))
-            self.roll_offset_input.text=str(data.get("imu_roll_offset_deg",0.0))
-            if self.on_navigation_settings:self.on_navigation_settings(self.navigation_options)
-        finally:
-            self._loading_nav_settings=False
+            if "display_brightness_percent" in data:
+                set_brightness(int(data["display_brightness_percent"]))
+        except (RuntimeError, ValueError) as exc:
+            import logging
+            logging.getLogger(__name__).info("Displayhelligkeit nicht anwendbar: %s", exc)
 
-    def save_navigation_settings(self):
-        try:
-            value=float(self.heading_offset_input.text.replace(",","."))
-            if not -180<=value<=180:raise ValueError("Ausrichtungs-Offset muss zwischen -180° und +180° liegen")
-            roll=float(self.roll_offset_input.text.replace(",","."))
-            if not -45<=roll<=45:raise ValueError("Neigungs-Offset muss zwischen -45° und +45° liegen")
-        except ValueError as exc:
-            self.status_label.text="Ungültiger IMU-Offset: "+str(exc)
-            return
-        payload={"imu_heading_offset_deg":value,"imu_roll_offset_deg":roll}
-        self._nav_request_serial+=1  # Ältere Leseantworten dürfen den gespeicherten Wert nicht überschreiben.
-        def worker():
-            try:
-                data=self.api_client.put("/api/navigation-settings",payload)
-                if hasattr(data,"json"):data=data.json()
-                Clock.schedule_once(lambda _dt:self._saved_navigation_settings(data))
-            except Exception as exc:
-                Clock.schedule_once(lambda _dt,msg=str(exc):setattr(self.status_label,"text","Speichern fehlgeschlagen: "+msg))
-        threading.Thread(target=worker,daemon=True).start()
-
-    def _saved_navigation_settings(self,data):
-        self.apply_navigation_settings(data)
-        self.status_label.text="GPS-/IMU-Einstellungen in tractor.db gespeichert"
-        self.load_navigation_settings()
-
-    def set_display_brightness(self,value):
-        try:
-            set_brightness(value)
-            self.brightness_label.text=f"Aktuell: {value} %"
-        except (RuntimeError,ValueError) as exc:
-            self.brightness_label.text="Helligkeit konnte nicht geändert werden"
-            self.status_label.text=str(exc)
+    def open_device_settings(self):
+        if self.on_device_settings:
+            self.on_device_settings()
 
     @staticmethod
     def make_button(text,callback,height=None,width=None):

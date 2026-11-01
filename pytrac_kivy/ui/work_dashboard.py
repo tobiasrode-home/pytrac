@@ -19,16 +19,12 @@ from kivy.uix.widget import Widget
 from pytrac_kivy.ui.precision_2d import Precision2D
 from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
 from pytrac_kivy.ui.steering_bar import SteeringBar
-from pytrac_kivy.ui.map_autozoom import fit_field_zoom
 from pytrac_kivy.ui.gps_filter import adjusted_heading
 from pytrac_core.sensors.antenna_compensation import compensate_antenna, implement_progress_position
 
-try:
-    from kivy_garden.mapview import MapView, MapMarker
-    from pytrac_kivy.ui.map_layers import FieldOverlay, field_center
-    from pytrac_kivy.ui.guidance_overlay import GuidanceOverlay
-except ImportError:
-    MapView=MapMarker=FieldOverlay=GuidanceOverlay=field_center=None
+# Die Online-Kartenansicht ist deaktiviert; die 2D-Ansicht benoetigt
+# weder MapView noch deren Layer.
+MapView = MapMarker = FieldOverlay = GuidanceOverlay = field_center = None
 
 TRACTOR_ICON=Path(__file__).resolve().parents[1]/'assets'/'tractor.png'
 GREEN=(.16,.43,.28,1)
@@ -92,21 +88,12 @@ class WorkDashboard(BoxLayout):
         body=BoxLayout(spacing=dp(8))
         self.add_widget(body)
         self.precision_view=Precision2D()
-        if MapView is not None:
-            self.map_view=MapView(lat=51.3,lon=9.5,zoom=14)
-            self.field_overlay=FieldOverlay(self.map_view)
-            self.map_view.add_layer(self.field_overlay)
-            self.field_overlay.set_abstract(True)
-            self.guidance_overlay=GuidanceOverlay(self.map_view)
-            self.map_view.add_layer(self.guidance_overlay)
-            self.map_view.bind(zoom=lambda *_:self._scale_tractor())
-            body.add_widget(self.map_view)
-            body.add_widget(self.precision_view)
-            self.map_view.size_hint_x=0
-            self.map_view.width=0
-        else:
-            self.map_view=self.field_overlay=self.guidance_overlay=None
-            body.add_widget(self.precision_view)
+        # Ausschliesslich die lokale 2D-Ansicht anzeigen. Keine Online-Karte
+        # erzeugen, keine Kartenkacheln laden und keine zweite Ansicht vorhalten.
+        self.map_view = None
+        self.field_overlay = None
+        self.guidance_overlay = None
+        body.add_widget(self.precision_view)
 
         # Interne Statuslabels bleiben für bestehende Abläufe und Fehlermeldungen
         # erhalten, werden aber NICHT als rechte Seitenleiste angezeigt.
@@ -123,7 +110,6 @@ class WorkDashboard(BoxLayout):
         self.add_widget(footer)
         for title,callback in (
             ('Einstellungen',self.open_settings),
-            ('Karte',self.toggle_map_mode),
             ('Hauptfeld',lambda:self.switch_phase('main')),
             ('Vorgewende',lambda:self.switch_phase('headland')),
             ('Vorige Spur',self.previous_track),
@@ -152,22 +138,6 @@ class WorkDashboard(BoxLayout):
 
     def open_settings(self):
         if self.on_settings:self.on_settings()
-
-    def toggle_map_mode(self):
-        self.abstract_map=not self.abstract_map
-        self.precision_view.size_hint_x=1 if self.abstract_map else 0
-        self.precision_view.width=0 if not self.abstract_map else self.precision_view.width
-        if self.map_view:
-            self.map_view.size_hint_x=0 if self.abstract_map else 1
-            self.map_view.width=0 if self.abstract_map else self.map_view.width
-        if self.field_overlay:
-            self.field_overlay.set_abstract(self.abstract_map)
-        self._guidance_zoom=None
-        if self.abstract_map and self._latest_state:
-            self._update_guidance_view(self._latest_state)
-        elif not self.abstract_map:
-            self._fit_loaded_field()
-        self._scale_tractor()
 
     def load_work_order(self,planning,guidance,objects):
         """Wird aus SettingsScreen nach erfolgreichem Laden aufgerufen."""
@@ -246,13 +216,8 @@ class WorkDashboard(BoxLayout):
                                         working_width_m=(self.selection.get('implement') or {}).get('working_width_m',0))
 
     def _fit_loaded_field(self):
-        if not self.map_view:return
-        field=self.selection.get('field')
-        if not field:return
-        zoom=fit_field_zoom(field,self.map_view.width,self.map_view.height)
-        center=field_center(field) if field_center else None
-        if center:self.map_view.center_on(*center)
-        if zoom is not None:self.map_view.zoom=zoom
+        """Kompatibilitaet fuer bestehende Aufrufer; keine Kartenansicht."""
+        return
 
     def update_selection(self):
         def name(kind):
@@ -501,6 +466,39 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
             if self._popup_feedback_label:
                 self._popup_feedback_label.text=str(exc)
 
+    def set_work_mode(self, mode):
+        self.work_mode = mode if mode in ('manual', 'confirmed', 'automatic') else 'confirmed'
+
+    def _automatic_event(self, fix, data):
+        """Automatically change recording state at the stop point; no hardware actuation."""
+        if getattr(self, 'work_mode', 'confirmed') != 'automatic' or not self.navigator:
+            return
+        action=fix.get('event_action')
+        distance=fix.get('event_distance_m')
+        speed=data.get('speed_mps')
+        if action not in ('lower','raise') or distance is None or speed is None:
+            return
+        if distance > 0.50 or abs(float(speed)) < 0.20:
+            return
+        if abs(float(fix.get('signed_offset_m') or 0)) > 0.75:
+            return
+        state=self.navigator.state
+        if action=='lower' and not state.confirmed_lower:
+            state.confirmed_lower=True
+            state.active=True
+            self.recording=True
+            self.record_override=None
+            self._update_record_button()
+            self.message_label.text='Automatik: Aufzeichnung gestartet – Gerät manuell einsetzen'
+        elif action=='raise' and state.confirmed_lower and not state.confirmed_raise:
+            state.confirmed_raise=True
+            state.active=False
+            self.recording=False
+            self.record_override=None
+            self._update_record_button()
+            self.message_label.text='Automatik: Aufzeichnung beendet – Gerät manuell ausheben'
+            self.next_track()
+
     def refresh(self):
         if self.busy:return
         self.busy=True
@@ -617,9 +615,10 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                 self.offset_label.text=(f'Spurabweichung: {abs(signed):.2f} m '
                                         + ('links' if signed>0 else 'rechts' if signed<0 else 'mittig'))
                 self.remaining_label.text=f"Bis Spurende: {fix['remaining_m']:.1f} m"
+                self._automatic_event(fix, data)
                 action=fix['event_action']
                 if action and fix.get('event_distance_m') is not None and fix['event_distance_m']<=5.0:
-                    self._show_event_popup(action)
+                    self._show_event_popup(action) if getattr(self,'work_mode','confirmed')=='confirmed' else None
                 if action:
                     self.action_label.text=(('Absenken' if action=='lower' else 'Ausheben')
                                             + f" · Stopppunkt {fix['event_distance_m']:.1f} m")
