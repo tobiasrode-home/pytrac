@@ -368,7 +368,7 @@ class WorkDashboard(BoxLayout):
         # SICHTBEREICH-Karte. Kein zusätzlicher Layout-Container.
         pad = dp(12)
         lower_top = view.y + pad + dp(63)
-        upper_bottom = view.top - pad - dp(58)
+        upper_bottom = view.top - pad - dp(63)
         gap = dp(8)
         button.width = dp(148)
         button.height = max(0, upper_bottom - lower_top - 2 * gap)

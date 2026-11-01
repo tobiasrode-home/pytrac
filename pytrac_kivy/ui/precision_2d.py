@@ -236,8 +236,8 @@ class Precision2D(Widget):
                 Line(circle=(cx,cy,dp(7)),width=dp(1.4))
             # Statuskarten an festen Bildschirmecken, ohne separate Statusleiste.
             pad = dp(12)
-            status_width = min(dp(142), max(dp(95), w * .25))
-            status_height = dp(58)
+            status_width = dp(148)
+            status_height = dp(63)
             def status_card(caption, value, sx, sy, fill=None):
                 if fill is None:
                     self._panel(sx, sy, status_width, status_height, .93)
@@ -255,9 +255,9 @@ class Precision2D(Widget):
                                             status_height, dp(12)), width=1)
                     title_color = (0, 0, 0, .76)
                     value_color = (0, 0, 0, 1)
-                self._text(caption, sx + status_width / 2, sy + dp(43),
+                self._text(caption, sx + status_width / 2, sy + dp(46),
                            10, title_color, False)
-                self._text(value, sx + status_width / 2, sy + dp(18),
+                self._text(value, sx + status_width / 2, sy + dp(20),
                            14, value_color)
 
             gps, track, implement = self.hud_status
