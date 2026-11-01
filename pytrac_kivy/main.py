@@ -11,7 +11,7 @@ Config.set('graphics','rotation','270')
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
-from pytrac_kivy.ui.app_theme import apply_theme
+from pytrac_kivy.ui.app_theme import apply_theme, install_popup_theme
 import threading
 from kivy.uix.screenmanager import Screen,ScreenManager,NoTransition
 from pytrac_core.config import settings
@@ -31,6 +31,7 @@ logging.getLogger("requests.packages.urllib3").setLevel(logging.WARNING)
 class PytracKivyApp(App):
     title='PyTrac'
     def build(self):
+        install_popup_theme()
         self.settings=settings
         self._dark_mode=True
         self.api_client=create_api_client()
