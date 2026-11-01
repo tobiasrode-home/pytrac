@@ -7,5 +7,7 @@ class NavigationSettings(Base):
     __tablename__ = 'navigation_settings'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     imu_heading_offset_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    imu_zero_yaw_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    imu_zero_pitch_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    imu_zero_roll_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     imu_roll_offset_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    imu_pitch_offset_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
