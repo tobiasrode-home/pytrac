@@ -54,3 +54,16 @@ def init_db() -> None:
             existing={col['name'] for col in inspector.get_columns('navigation_settings')}
             if 'imu_roll_offset_deg' not in existing:
                 conn.execute(text("ALTER TABLE navigation_settings ADD COLUMN imu_roll_offset_deg FLOAT NOT NULL DEFAULT 0.0"))
+
+    # Workhistory je Einsatz, additiv und wiederholbar. Alte Punkte bleiben erhalten.
+    inspector=inspect(engine)
+    if 'work_progress_points' in inspector.get_table_names():
+        existing={c['name'] for c in inspector.get_columns('work_progress_points')}
+        with engine.begin() as conn:
+            if 'execution_id' not in existing:
+                conn.execute(text('ALTER TABLE work_progress_points ADD COLUMN execution_id INTEGER REFERENCES work_executions(id)'))
+            # Pro Alt-Plan einen historischen Einsatz anlegen, nur wenn alte Punkte vorhanden sind.
+            old_plans=conn.execute(text('SELECT DISTINCT planning_id FROM work_progress_points WHERE execution_id IS NULL')).scalars().all()
+            for planning_id in old_plans:
+                result=conn.execute(text("INSERT INTO work_executions (planning_id,started_at,name) VALUES (:id,CURRENT_TIMESTAMP,'Bisherige Aufzeichnung')"),{'id':planning_id})
+                conn.execute(text('UPDATE work_progress_points SET execution_id=:session WHERE planning_id=:id AND execution_id IS NULL'),{'session':result.lastrowid,'id':planning_id})

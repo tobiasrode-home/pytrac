@@ -163,7 +163,7 @@ class WorkDashboard(BoxLayout):
         self.update_selection()
         self.message_label.text='Hauptfeld geladen · Navigation bereit'
         self._update_track_display()
-        self._load_progress(planning['id'])
+        self._load_progress(planning['id'],planning.get("_work_session_id"))
         Clock.schedule_once(lambda _dt:self._fit_loaded_field(),0.25)
 
     def reset_work_order(self):
@@ -184,11 +184,13 @@ class WorkDashboard(BoxLayout):
             self.guidance_overlay.set_plan({},'main','')
         self._draw_progress()
 
-    def _load_progress(self,planning_id):
+    def _load_progress(self,planning_id,execution_id):
         """Nachladen aus tractor.db über die lokale API."""
         def worker():
             try:
-                result=self.api_client.get(f"/api/work-plannings/{planning_id}/progress")
+                if execution_id is None:
+                    raise ValueError('Kein Einsatz ausgewählt')
+                result=self.api_client.get(f"/api/work-plannings/{planning_id}/progress?execution_id={execution_id}")
                 Clock.schedule_once(lambda _dt:self._apply_progress(planning_id,result))
             except Exception as exc:
                 Clock.schedule_once(lambda _dt,error=str(exc):setattr(self.message_label,'text','Fahrdaten laden fehlgeschlagen: '+error))
@@ -649,7 +651,10 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                         lat,lon,data['heading_deg'],tractor['length_m'],
                         implement['length_m'],implement.get('mount_type','rear'),
                         implement.get('work_offset_m') or 0.)
-                    payload={"fix_key":fix_key,"phase":self.navigator.state.phase,
+                    execution_id=self.navigator.planning.get('_work_session_id')
+                    if execution_id is None:
+                        raise ValueError('Kein Einsatz für die Aufzeichnung ausgewählt')
+                    payload={"execution_id":execution_id,"fix_key":fix_key,"phase":self.navigator.state.phase,
                              "track_id":str(self.navigator.track['id']),
                              "latitude":float(record_lat),"longitude":float(record_lon),
                              "speed_mps":speed,"accuracy_m":data.get('gps_accuracy_m')}

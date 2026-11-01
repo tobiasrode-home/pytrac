@@ -4,11 +4,19 @@ from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConst
 from sqlalchemy.orm import Mapped, mapped_column
 from pytrac_core.persistence.base import Base
 
+class WorkExecution(Base):
+    __tablename__ = "work_executions"
+    id: Mapped[int] = mapped_column(Integer,primary_key=True)
+    planning_id: Mapped[int] = mapped_column(ForeignKey("work_plannings.id",ondelete="CASCADE"),nullable=False,index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,default=lambda:datetime.now(timezone.utc))
+    name: Mapped[str | None] = mapped_column(String(160))
+
 class WorkProgressPoint(Base):
     __tablename__ = "work_progress_points"
     __table_args__ = (UniqueConstraint("planning_id","fix_key",name="uq_work_progress_fix"),)
     id: Mapped[int] = mapped_column(Integer,primary_key=True)
     planning_id: Mapped[int] = mapped_column(ForeignKey("work_plannings.id",ondelete="CASCADE"),nullable=False,index=True)
+    execution_id: Mapped[int | None] = mapped_column(ForeignKey("work_executions.id"),nullable=True,index=True)
     fix_key: Mapped[str] = mapped_column(String(180),nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,default=lambda:datetime.now(timezone.utc))
     phase: Mapped[str] = mapped_column(String(20),nullable=False)

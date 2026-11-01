@@ -98,6 +98,8 @@ def open_create_work_order(api,choices,on_created):
             api.post("/api/work-plannings/preview",payload)
             plan=api.post("/api/work-plannings",payload)
             guidance=api.post(f"/api/work-plannings/{plan['id']}/guidance",{"output_mode":"targets"})
+            execution=api.post(f"/api/work-plannings/{plan['id']}/sessions",{})
+            plan=dict(plan,_work_session_id=execution['id'])
             Clock.schedule_once(lambda _dt:(popup.dismiss(),on_created(plan,guidance,
                                 {"tractor":tractor,"implement":implement,"field":field})))
         except Exception as exc:

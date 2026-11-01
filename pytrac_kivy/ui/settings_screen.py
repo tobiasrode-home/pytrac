@@ -195,7 +195,7 @@ class SettingsScreen(BoxLayout):
     def open_work_order(self):
         if not self.api_client:
             self.status_label.text='API-Client fehlt';return
-        open_work_order_dialog(self.api_client,self._work_order_loaded)
+        open_work_order_dialog(self.api_client,self._work_order_loaded,selection=dict(self.selection))
     def _work_order_loaded(self,planning,guidance,objects):
         self.selection.update(objects)
         self.update_selection_buttons()
