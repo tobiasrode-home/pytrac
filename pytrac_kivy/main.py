@@ -14,7 +14,6 @@ from pytrac_core.config import settings
 from pytrac_kivy.dependencies import create_api_client
 from pytrac_kivy.ui.master_data_screen import MasterDataScreen
 from pytrac_kivy.ui.settings_screen import SettingsScreen
-from pytrac_kivy.ui.sensor_screen import SensorScreen
 from pytrac_kivy.ui.wifi_manager import WifiManager
 from pytrac_kivy.ui.work_dashboard import WorkDashboard
 import logging
@@ -38,7 +37,6 @@ class PytracKivyApp(App):
         self.settings_screen=SettingsScreen(api_url=settings.kivy_api_base_url,
             selection=self.selection,api_client=self.api_client,on_back=self.show_dashboard,
             on_selection_changed=self.selection_changed,on_master_data=self.show_master_data,
-            on_sensors=self.show_sensors,
             on_wifi_manager=self.show_wifi,on_work_order_loaded=self.work_order_loaded,
             on_work_order_reset=self.reset_work_order,
             on_navigation_settings=self.dashboard.set_navigation_settings)
@@ -47,8 +45,6 @@ class PytracKivyApp(App):
             selection=self.selection,api_client=self.api_client,on_back=self.show_settings,
             on_selection_changed=self.selection_changed)
         self._add_screen('master_data',self.master_data_screen)
-        self.sensor_screen=SensorScreen(api_client=self.api_client,on_back=self.show_settings)
-        self._add_screen('sensors',self.sensor_screen)
         self.wifi_screen=WifiManager(on_back=self.show_settings)
         self._add_screen('wifi',self.wifi_screen)
         self.screen_manager.current='dashboard'
@@ -63,20 +59,16 @@ class PytracKivyApp(App):
         self.dashboard.reset_work_order()
 
     def show_dashboard(self):
-        self.sensor_screen.stop()
         self.screen_manager.current='dashboard'
         self.dashboard.selection_changed()
         self.dashboard.refresh()
     def show_settings(self):
-        self.sensor_screen.stop()
         self.screen_manager.current='settings';self.settings_screen.load_choices();self.settings_screen.load_navigation_settings()
     def show_master_data(self):
         self.screen_manager.current='master_data';self.master_data_screen.load_choices()
-    def show_sensors(self):
-        self.screen_manager.current='sensors';self.sensor_screen.start()
     def show_wifi(self):self.screen_manager.current='wifi'
     def selection_changed(self):
         self.dashboard.selection_changed();self.settings_screen.update_selection_buttons()
     def on_stop(self):
-        self.sensor_screen.stop();self.dashboard.stop();self.api_client.close()
+        self.dashboard.stop();self.api_client.close()
 if __name__=='__main__':PytracKivyApp().run()

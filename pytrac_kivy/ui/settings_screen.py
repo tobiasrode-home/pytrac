@@ -16,7 +16,7 @@ from pytrac_kivy.ui.create_work_order import open_create_work_order
 
 class SettingsScreen(BoxLayout):
     def __init__(self,api_url,selection,api_client=None,on_back=None,
-                 on_selection_changed=None,on_master_data=None,on_sensors=None,on_wifi_manager=None,
+                 on_selection_changed=None,on_master_data=None,on_wifi_manager=None,
                  on_work_order_loaded=None,on_work_order_reset=None,on_navigation_settings=None,**kwargs):
         super().__init__(orientation='vertical',padding=dp(9),spacing=dp(5),**kwargs)
         self.api_url=api_url.rstrip('/')
@@ -25,7 +25,6 @@ class SettingsScreen(BoxLayout):
         self.on_back=on_back
         self.on_selection_changed=on_selection_changed
         self.on_master_data=on_master_data
-        self.on_sensors=on_sensors
         self.on_wifi_manager=on_wifi_manager
         self.on_work_order_loaded=on_work_order_loaded
         self.on_work_order_reset=on_work_order_reset
@@ -37,7 +36,6 @@ class SettingsScreen(BoxLayout):
         header.add_widget(self.make_button('Zurück',lambda *_:self.go_back(),width=dp(145)))
         header.add_widget(Label(text='[b]Einstellungen[/b]',markup=True,font_size='25sp'))
         header.add_widget(self.make_button('Stammdaten',lambda *_:self.open_master_data(),width=dp(180)))
-        header.add_widget(self.make_button('Sensoren',lambda *_:self.open_sensors(),width=dp(160)))
         header.add_widget(self.make_button('Wifi',lambda *_:self.open_wifi_manager(),width=dp(180)))
         self.add_widget(header)
         self.add_widget(Label(text='Arbeitsauftrag auswählen',size_hint_y=None,height=dp(25),bold=True,font_size='18sp'))
@@ -145,10 +143,7 @@ class SettingsScreen(BoxLayout):
         except ValueError as exc:
             self.status_label.text="Ungültiger IMU-Offset: "+str(exc)
             return
-        payload={"imu_heading_offset_deg":value,"imu_roll_offset_deg":roll,
-                 "imu_zero_yaw_deg":self.navigation_options.get("imu_zero_yaw_deg",0.),
-                 "imu_zero_pitch_deg":self.navigation_options.get("imu_zero_pitch_deg",0.),
-                 "imu_zero_roll_deg":self.navigation_options.get("imu_zero_roll_deg",0.)}
+        payload={"imu_heading_offset_deg":value,"imu_roll_offset_deg":roll}
         self._nav_request_serial+=1  # Ältere Leseantworten dürfen den gespeicherten Wert nicht überschreiben.
         def worker():
             try:
@@ -255,9 +250,6 @@ class SettingsScreen(BoxLayout):
         if self.on_work_order_loaded:self.on_work_order_loaded(planning,guidance,objects)
     def go_back(self):
         if self.on_back:self.on_back()
-    def open_sensors(self):
-        if self.on_sensors:self.on_sensors()
-
     def open_master_data(self):
         if self.on_master_data:self.on_master_data()
     def open_wifi_manager(self):
