@@ -10,6 +10,7 @@ Config.set('graphics','resizable','0')
 Config.set('graphics','rotation','270')
 from kivy.app import App
 from kivy.clock import Clock
+from kivy.core.window import Window
 from pytrac_kivy.ui.app_theme import apply_theme
 import threading
 from kivy.uix.screenmanager import Screen,ScreenManager,NoTransition
@@ -62,6 +63,8 @@ class PytracKivyApp(App):
         self._add_screen('wifi',self.wifi_screen)
         self.screen_manager.current='dashboard'
         Clock.schedule_once(lambda _dt:self._load_theme(),0)
+        # Dynamisch erzeugte Menüs und Popups erhalten das aktuelle Theme.
+        Clock.schedule_interval(self._refresh_menu_theme, 0.35)
         return self.screen_manager
     def _load_theme(self):
         def worker():
@@ -74,10 +77,21 @@ class PytracKivyApp(App):
                 logging.getLogger(__name__).exception('Darkmode konnte nicht geladen werden')
         threading.Thread(target=worker,daemon=True).start()
 
+    def _refresh_menu_theme(self, _dt):
+        # Dashboard-Zeichnung nicht periodisch anfassen; nur Menüs/Dialoge.
+        if self.screen_manager.current != "dashboard":
+            apply_theme(self.screen_manager, self._dark_mode)
+            # Kivy-Popups werden direkt an Window angehängt.
+            for child in Window.children:
+                if child is not self.screen_manager:
+                    apply_theme(child, self._dark_mode)
+
     def set_dark_mode(self,dark):
         self._dark_mode=bool(dark)
         apply_theme(self.screen_manager,self._dark_mode)
-        self.dashboard.set_dark_mode(self._dark_mode)
+        self._refresh_menu_theme(0)
+        self.dashboard.precision_view.set_dark_mode(self._dark_mode)
+        self.dashboard.steering_bar.set_dark_mode(self._dark_mode)
 
     def _add_screen(self,name,widget):
         screen=Screen(name=name);screen.add_widget(widget);self.screen_manager.add_widget(screen)
@@ -89,8 +103,8 @@ class PytracKivyApp(App):
         self.dashboard.reset_work_order()
 
     def show_dashboard(self):
-        self.set_dark_mode(self._dark_mode)
         self.screen_manager.current='dashboard'
+        self.set_dark_mode(self._dark_mode)
         self.dashboard.selection_changed()
         self.dashboard.refresh()
     def show_settings(self):
@@ -102,7 +116,10 @@ class PytracKivyApp(App):
         self.device_settings_screen.load_settings()
     def show_master_data(self):
         self.screen_manager.current='master_data';self.master_data_screen.load_choices()
-    def show_wifi(self):self.screen_manager.current='wifi'
+        self._refresh_menu_theme(0)
+    def show_wifi(self):
+        self.screen_manager.current='wifi'
+        self._refresh_menu_theme(0)
     def selection_changed(self):
         self.dashboard.selection_changed();self.settings_screen.update_selection_buttons()
     def on_stop(self):
