@@ -51,7 +51,7 @@ else:
 class WorkDashboard(BoxLayout):
     def __init__(self,api_url,selection=None,api_client=None,on_settings=None,
                  on_status=None,refresh_interval=1.,**kwargs):
-        super().__init__(orientation='vertical',spacing=dp(7),padding=dp(8),**kwargs)
+        super().__init__(orientation='vertical',spacing=0,padding=dp(8),**kwargs)
         self.api_url=api_url.rstrip('/')
         self.api_client=api_client
         self.selection=selection if selection is not None else {}
@@ -94,7 +94,8 @@ class WorkDashboard(BoxLayout):
         self.map_view = None
         self.field_overlay = None
         self.guidance_overlay = None
-        map_layer=FloatLayout()
+        # Kartenbereich ohne zusätzliche vertikale Abstände direkt unter der Lenkhilfe.
+        map_layer=FloatLayout(size_hint=(1, 1))
         map_layer.add_widget(self.precision_view)
         self.event_button=Button(text='',size_hint=(None,None),size=(dp(116),dp(78)),
                                  pos_hint={'right':.985,'center_y':.52},
