@@ -10,6 +10,7 @@ from kivy.uix.switch import Switch
 from kivy.uix.textinput import TextInput
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
+from pytrac_kivy.ui.theme_colors import DARK, LIGHT
 from pytrac_kivy.ui.display_brightness import read_brightness, set_brightness
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
 
@@ -66,6 +67,7 @@ class DeviceSettingsScreen(BoxLayout):
         buttons=BoxLayout(spacing=dp(10))
         for percent in (50,100):
             button=self._button(f'{percent} %',lambda _btn,v=percent:self._select_brightness(v),height=52)
+            button._pytrac_brightness_choice = percent
             buttons.add_widget(button)
             self.brightness_buttons[percent]=button
         brightness_row.add_widget(buttons)
@@ -74,6 +76,7 @@ class DeviceSettingsScreen(BoxLayout):
         switch_holder=BoxLayout(size_hint_x=1,orientation='horizontal')
         self.dark_mode_switch=Switch(active=True,size_hint=(None,None),
                                      width=dp(120),height=dp(68))
+        self.dark_mode_switch.bind(active=lambda _widget, active: self.refresh_brightness_buttons(active))
         switch_holder.add_widget(self.dark_mode_switch)
         switch_holder.add_widget(Label())
         theme_row.add_widget(switch_holder)
@@ -118,8 +121,20 @@ class DeviceSettingsScreen(BoxLayout):
 
     def _select_brightness(self,percent):
         self.brightness_value=percent
-        for value,button in self.brightness_buttons.items():
-            button.background_color=(.16,.43,.28,1) if value==percent else (.25,.28,.32,1)
+        self.refresh_brightness_buttons()
+
+    def refresh_brightness_buttons(self, dark=None):
+        """Apply a persistent selected/unselected state in either theme."""
+        if dark is None:
+            dark = bool(self.dark_mode_switch.active)
+        palette = DARK if dark else LIGHT
+        for value, button in self.brightness_buttons.items():
+            selected = value == self.brightness_value
+            button._pytrac_brightness_selected = selected
+            button.background_normal = ''
+            button.background_down = ''
+            button.background_color = palette['selected_button'] if selected else palette['button']
+            button.color = palette['selected_button_text'] if selected else palette['button_text']
 
     def _snapshot(self):
         # Strings beibehalten, damit auch unfertige Eingaben als Änderung zählen.
@@ -195,6 +210,7 @@ class DeviceSettingsScreen(BoxLayout):
         self.heading_input.text=str(data.get('imu_heading_offset_deg',0))
         self.roll_input.text=str(data.get('imu_roll_offset_deg',0))
         self._select_brightness(min((50,100),key=lambda v:abs(v-int(data.get('display_brightness_percent',100)))))
+        self.refresh_brightness_buttons()
         self._loaded=True
         self._saved_snapshot=self._snapshot()
         self.save_button.disabled=False
@@ -254,6 +270,7 @@ class DeviceSettingsScreen(BoxLayout):
         self._saved_snapshot=self._snapshot()
         if self.on_theme_changed:
             self.on_theme_changed(bool(data.get('dark_mode',True)))
+        self.refresh_brightness_buttons(bool(data.get('dark_mode',True)))
         if self.on_work_mode:
             self.on_work_mode(data['work_mode'])
         if self.on_navigation_settings:

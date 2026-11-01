@@ -55,17 +55,12 @@ def apply_theme(root, dark):
             widget._pytrac_theme_original = original
         if isinstance(widget, ModalView):
             _style_modal(widget, palette)
-        if _dark:
-            for attr, value in widget._pytrac_theme_original.items():
-                setattr(widget, attr, value)
-            # The popup background must not revert to Kivy's dark atlas.
-            if isinstance(widget, ModalView):
-                _style_modal(widget, palette)
-        elif isinstance(widget, (Button, Spinner)):
+        if isinstance(widget, (Button, Spinner)):
             widget.background_normal = ''
             widget.background_down = ''
-            widget.background_color = palette['button']
-            widget.color = palette['button_text']
+            selected = bool(getattr(widget, '_pytrac_brightness_selected', False))
+            widget.background_color = palette['selected_button'] if selected else palette['button']
+            widget.color = palette['selected_button_text'] if selected else palette['button_text']
         elif isinstance(widget, TextInput):
             widget.background_color = palette['input']
             widget.foreground_color = palette['input_text']
