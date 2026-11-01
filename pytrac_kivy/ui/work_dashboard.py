@@ -118,6 +118,8 @@ class WorkDashboard(BoxLayout):
             footer.add_widget(self._button(title,callback))
         self.record_button=self._button('GPS: pausiert',self.toggle_record_override)
         footer.add_widget(self.record_button)
+        self.finish_button=self._button('Gerät beenden',self.request_early_finish)
+        footer.add_widget(self.finish_button)
         self._update_record_button()
         self.update_selection()
         self._refresh_event=Clock.schedule_interval(lambda _dt:self.refresh(),self.refresh_interval)
@@ -135,20 +137,6 @@ class WorkDashboard(BoxLayout):
         button=Button(text=text,background_normal='',background_color=GREEN,**kw)
         button.bind(on_release=lambda *_:callback())
         return button
-
-    def set_dark_mode(self, dark):
-        """Apply current theme to the live dashboard, without changing its layout."""
-        dark = bool(dark)
-        self.precision_view.set_dark_mode(dark)
-        self.steering_bar.set_dark_mode(dark)
-        # The footer buttons have explicit backgrounds, so style them directly.
-        for child in self.children:
-            if isinstance(child, BoxLayout):
-                for button in child.children:
-                    if isinstance(button, Button):
-                        button.background_normal = ''
-                        button.background_color = GREEN if dark else (.75, .83, .90, 1)
-                        button.color = (1, 1, 1, 1) if dark else (.08, .13, .19, 1)
 
     def open_settings(self):
         if self.on_settings:self.on_settings()
@@ -350,6 +338,10 @@ class WorkDashboard(BoxLayout):
         except ValueError as exc:self.message_label.text=str(exc)
 
     def _update_record_button(self):
+        if hasattr(self, 'finish_button'):
+            active=bool(self.navigator and self.navigator.state.active)
+            self.finish_button.disabled=not active
+            self.finish_button.opacity=1.0 if active else 0.45
         """Status und Bedienknopf für manuelle GPS-Übersteuerung."""
         if self.record_override is None:
             self.record_button.text=('GPS: läuft\
@@ -377,6 +369,58 @@ MANUELL')
         self.message_label.text=('GPS-Aufnahme aktiviert – Arbeitsfläche nur bei aktivem Gerät'
                                  if self.recording else
                                  'GPS-Aufnahme pausiert')
+
+    def request_early_finish(self):
+        """Manuelles vorzeitiges Ausheben, unabhängig vom Arbeitsmodus.
+
+        Die Stopppunkt-Prüfung wird hier bewusst nicht verwendet. Die
+        Aufzeichnung endet erst nach ausdrücklicher Fahrerbestätigung.
+        """
+        if not self.navigator or not self.navigator.state.active or self._popup is not None:
+            return
+        layout=BoxLayout(orientation='vertical',padding=dp(16),spacing=dp(12))
+        layout.add_widget(Label(
+            text='Anbaugerät zuerst manuell ausheben.\n'
+                 'Danach die vorzeitige Beendigung bestätigen.\n'
+                 'Die aktuelle Spur bleibt ausgewählt.',
+            halign='center',valign='middle'))
+        buttons=BoxLayout(size_hint_y=None,height=dp(62),spacing=dp(10))
+        confirm=Button(text='AUSGEHOBEN – BEENDEN',background_normal='',
+                       background_color=GREEN)
+        cancel=Button(text='Abbrechen')
+        buttons.add_widget(cancel)
+        buttons.add_widget(confirm)
+        layout.add_widget(buttons)
+        popup=Popup(title='Arbeit vorzeitig beenden',content=layout,
+                    size_hint=(.85,.55),auto_dismiss=False)
+        self._popup=popup
+
+        def close(*_):
+            popup.dismiss()
+            if self._popup is popup:
+                self._popup=None
+
+        def finish(*_):
+            if not self.navigator or not self.navigator.state.active:
+                close()
+                return
+            state=self.navigator.state
+            state.active=False
+            state.confirmed_raise=True
+            state.pending_action=None
+            self.recording=False
+            self.record_override=None
+            self._dismissed_event=(state.phase,state.track_index,'raise')
+            self._update_record_button()
+            self.update_selection()
+            self.message_label.text=(
+                'Gerät vorzeitig ausgehoben · Aufzeichnung beendet · '
+                'Spurwechsel manuell wählen')
+            close()
+
+        cancel.bind(on_release=close)
+        confirm.bind(on_release=finish)
+        popup.open()
 
     def _show_event_popup(self,action,manual=False):
         if not self.navigator or self._popup is not None:
