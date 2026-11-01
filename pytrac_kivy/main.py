@@ -77,8 +77,7 @@ class PytracKivyApp(App):
     def set_dark_mode(self,dark):
         self._dark_mode=bool(dark)
         apply_theme(self.screen_manager,self._dark_mode)
-        self.dashboard.precision_view.set_dark_mode(self._dark_mode)
-        self.dashboard.steering_bar.set_dark_mode(self._dark_mode)
+        self.dashboard.set_dark_mode(self._dark_mode)
 
     def _add_screen(self,name,widget):
         screen=Screen(name=name);screen.add_widget(widget);self.screen_manager.add_widget(screen)
@@ -90,6 +89,7 @@ class PytracKivyApp(App):
         self.dashboard.reset_work_order()
 
     def show_dashboard(self):
+        self.set_dark_mode(self._dark_mode)
         self.screen_manager.current='dashboard'
         self.dashboard.selection_changed()
         self.dashboard.refresh()

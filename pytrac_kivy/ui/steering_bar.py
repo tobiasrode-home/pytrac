@@ -60,6 +60,9 @@ class SteeringBar(BoxLayout):
 
     def set_dark_mode(self, dark):
         self.indicator.set_dark_mode(dark)
+        # Reapply on next Kivy frame, after any theme traversal or canvas refresh.
+        from kivy.clock import Clock
+        Clock.schedule_once(lambda _dt: self.indicator._draw(), 0)
         self.label.color=(1,1,1,1) if dark else (0,0,0,1)
 
     def update(self, signed_offset_m=None, reverse=False):

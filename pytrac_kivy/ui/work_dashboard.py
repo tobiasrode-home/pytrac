@@ -136,6 +136,20 @@ class WorkDashboard(BoxLayout):
         button.bind(on_release=lambda *_:callback())
         return button
 
+    def set_dark_mode(self, dark):
+        """Apply current theme to the live dashboard, without changing its layout."""
+        dark = bool(dark)
+        self.precision_view.set_dark_mode(dark)
+        self.steering_bar.set_dark_mode(dark)
+        # The footer buttons have explicit backgrounds, so style them directly.
+        for child in self.children:
+            if isinstance(child, BoxLayout):
+                for button in child.children:
+                    if isinstance(button, Button):
+                        button.background_normal = ''
+                        button.background_color = GREEN if dark else (.75, .83, .90, 1)
+                        button.color = (1, 1, 1, 1) if dark else (.08, .13, .19, 1)
+
     def open_settings(self):
         if self.on_settings:self.on_settings()
 
