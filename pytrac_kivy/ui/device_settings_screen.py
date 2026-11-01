@@ -10,6 +10,7 @@ from kivy.uix.slider import Slider
 from kivy.uix.switch import Switch
 from kivy.uix.textinput import TextInput
 from kivy.uix.popup import Popup
+from kivy.uix.scrollview import ScrollView
 from pytrac_kivy.ui.display_brightness import read_brightness, set_brightness
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
 
@@ -32,28 +33,34 @@ class DeviceSettingsScreen(BoxLayout):
         self._confirm_popup=None
 
         header=BoxLayout(size_hint_y=None,height=dp(52),spacing=dp(8))
-        header.add_widget(self._button('Zurück',lambda *_:self.go_back(),width=dp(145)))
+        header.add_widget(self._button('← Zurück',lambda *_:self.go_back(),width=dp(145)))
         header.add_widget(Label(text='[b]Geräte Einstellungen[/b]',markup=True,font_size='24sp'))
         self.add_widget(header)
 
-        self.add_widget(Label(text='Arbeitsmodus',bold=True,font_size='20sp',
+        scroll=ScrollView(do_scroll_x=False,bar_width=dp(8))
+        content=BoxLayout(orientation='vertical',size_hint_y=None,spacing=dp(9),padding=(0,dp(6),0,dp(6)))
+        content.bind(minimum_height=content.setter('height'))
+        scroll.add_widget(content)
+        self.add_widget(scroll)
+
+        content.add_widget(Label(text='Arbeitsmodus',bold=True,font_size='20sp',
                               size_hint_y=None,height=dp(35)))
         mode_row=BoxLayout(size_hint_y=None,height=dp(58),spacing=dp(12))
         mode_row.add_widget(Label(text='Manuell',size_hint_x=None,width=dp(110)))
         self.mode_slider=Slider(min=0,max=2,step=1,value=1)
         mode_row.add_widget(self.mode_slider)
         mode_row.add_widget(Label(text='Automatik',size_hint_x=None,width=dp(125)))
-        self.add_widget(mode_row)
+        content.add_widget(mode_row)
         self.mode_label=Label(text='Aktiv: Mit Bestätigung',size_hint_y=None,height=dp(30))
         self.mode_slider.bind(value=lambda _,v:setattr(
             self.mode_label,'text',('Aktiv: Manuell', 'Aktiv: Mit Bestätigung',
                                     'Aktiv: Automatik ohne Bestätigung')[int(round(v))]))
-        self.add_widget(self.mode_label)
-        self.add_widget(Label(text='Automatik: Aufzeichnung an Start/Endpunkt ohne Bestätigung; '
+        content.add_widget(self.mode_label)
+        content.add_widget(Label(text='Automatik: Aufzeichnung an Start/Endpunkt ohne Bestätigung; '
                               'Gerät weiterhin manuell bedienen.',
                               size_hint_y=None,height=dp(35)))
 
-        self.add_widget(Label(text='GPS / IMU-Offsets',bold=True,font_size='20sp',
+        content.add_widget(Label(text='GPS / IMU-Offsets',bold=True,font_size='20sp',
                               size_hint_y=None,height=dp(35)))
         offset_row=BoxLayout(size_hint_y=None,height=dp(52),spacing=dp(8))
         offset_row.add_widget(Label(text='Ausrichtung (°)',size_hint_x=.28))
@@ -64,9 +71,9 @@ class DeviceSettingsScreen(BoxLayout):
         self.roll_input=TextInput(text='0',multiline=False,input_filter='float',size_hint_x=.18)
         bind_fullscreen_keyboard(self.roll_input,'Neigungs-Offset in Grad')
         offset_row.add_widget(self.roll_input)
-        self.add_widget(offset_row)
+        content.add_widget(offset_row)
 
-        self.add_widget(Label(text='Displayhelligkeit',bold=True,font_size='20sp',
+        content.add_widget(Label(text='Displayhelligkeit',bold=True,font_size='20sp',
                               size_hint_y=None,height=dp(35)))
         brightness_row=BoxLayout(size_hint_y=None,height=dp(54),spacing=dp(8))
         self.brightness_value=75
@@ -75,19 +82,18 @@ class DeviceSettingsScreen(BoxLayout):
             button=self._button(f'{percent} %',lambda _btn,v=percent:self._select_brightness(v))
             brightness_row.add_widget(button)
             self.brightness_buttons[percent]=button
-        self.add_widget(brightness_row)
-        self.add_widget(Label(text='Helligkeit wählen und Einstellungen speichern.',
+        content.add_widget(brightness_row)
+        content.add_widget(Label(text='Helligkeit wählen und Einstellungen speichern.',
                               size_hint_y=None,height=dp(28)))
-        self.add_widget(Label(text='Darstellung',bold=True,font_size='20sp',
+        content.add_widget(Label(text='Darstellung',bold=True,font_size='20sp',
                               size_hint_y=None,height=dp(35)))
         theme_row=BoxLayout(size_hint_y=None,height=dp(54),spacing=dp(12))
         theme_row.add_widget(Label(text='Darkmode',size_hint_x=.7))
         self.dark_mode_switch=Switch(active=True,size_hint_x=.3)
         theme_row.add_widget(self.dark_mode_switch)
-        self.add_widget(theme_row)
-        self.add_widget(Label(text='An = bisherige dunkle Darstellung, Aus = helles Design',
+        content.add_widget(theme_row)
+        content.add_widget(Label(text='An = bisherige dunkle Darstellung, Aus = helles Design',
                               size_hint_y=None,height=dp(28)))
-        self.add_widget(BoxLayout())
         self.save_button=self._button('Einstellungen speichern',lambda *_:self.save(),height=dp(58))
         self.add_widget(self.save_button)
         self.status=Label(text='',size_hint_y=None,height=dp(35))
