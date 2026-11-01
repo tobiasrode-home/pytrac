@@ -7,6 +7,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.slider import Slider
+from kivy.uix.switch import Switch
 from kivy.uix.textinput import TextInput
 from pytrac_kivy.ui.display_brightness import read_brightness, set_brightness
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
@@ -15,12 +16,13 @@ log=logging.getLogger(__name__)
 
 class DeviceSettingsScreen(BoxLayout):
     def __init__(self,api_client,on_back=None,on_navigation_settings=None,
-                 on_work_mode=None,**kwargs):
+                 on_work_mode=None,on_theme_changed=None,**kwargs):
         super().__init__(orientation='vertical',padding=dp(12),spacing=dp(9),**kwargs)
         self.api_client=api_client
         self.on_back=on_back
         self.on_navigation_settings=on_navigation_settings
         self.on_work_mode=on_work_mode
+        self.on_theme_changed=on_theme_changed
         self._request_id=0
         self._saving=False
         self._loaded=False
@@ -72,6 +74,15 @@ class DeviceSettingsScreen(BoxLayout):
         self.add_widget(brightness_row)
         self.add_widget(Label(text='Helligkeit wählen und Einstellungen speichern.',
                               size_hint_y=None,height=dp(28)))
+        self.add_widget(Label(text='Darstellung',bold=True,font_size='20sp',
+                              size_hint_y=None,height=dp(35)))
+        theme_row=BoxLayout(size_hint_y=None,height=dp(54),spacing=dp(12))
+        theme_row.add_widget(Label(text='Darkmode',size_hint_x=.7))
+        self.dark_mode_switch=Switch(active=True,size_hint_x=.3)
+        theme_row.add_widget(self.dark_mode_switch)
+        self.add_widget(theme_row)
+        self.add_widget(Label(text='An = bisherige dunkle Darstellung, Aus = helles Design',
+                              size_hint_y=None,height=dp(28)))
         self.add_widget(BoxLayout())
         self.save_button=self._button('Einstellungen speichern',lambda *_:self.save(),height=dp(58))
         self.add_widget(self.save_button)
@@ -117,6 +128,7 @@ class DeviceSettingsScreen(BoxLayout):
     def _loaded_settings(self,data,request_id):
         if request_id!=self._request_id:
             return
+        self.dark_mode_switch.active=bool(data.get('dark_mode',True))
         self.mode_slider.value={'manual':0,'confirmed':1,'automatic':2}.get(data.get('work_mode'),1)
         self.heading_input.text=str(data.get('imu_heading_offset_deg',0))
         self.roll_input.text=str(data.get('imu_roll_offset_deg',0))
@@ -153,6 +165,7 @@ class DeviceSettingsScreen(BoxLayout):
             'imu_heading_offset_deg':heading,
             'imu_roll_offset_deg':roll,
             'display_brightness_percent':brightness,
+            'dark_mode':bool(self.dark_mode_switch.active),
         }
         self._saving=True
         self.save_button.disabled=True
@@ -174,6 +187,8 @@ class DeviceSettingsScreen(BoxLayout):
         if not isinstance(data,dict):
             self.status.text='Ungültige Speicherantwort'
             return
+        if self.on_theme_changed:
+            self.on_theme_changed(bool(data.get('dark_mode',True)))
         if self.on_work_mode:
             self.on_work_mode(data['work_mode'])
         if self.on_navigation_settings:

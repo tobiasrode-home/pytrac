@@ -9,6 +9,9 @@ Config.set('graphics','height','720')
 Config.set('graphics','resizable','0')
 Config.set('graphics','rotation','270')
 from kivy.app import App
+from kivy.clock import Clock
+from pytrac_kivy.ui.app_theme import apply_theme
+import threading
 from kivy.uix.screenmanager import Screen,ScreenManager,NoTransition
 from pytrac_core.config import settings
 from pytrac_kivy.dependencies import create_api_client
@@ -28,6 +31,7 @@ class PytracKivyApp(App):
     title='PyTrac'
     def build(self):
         self.settings=settings
+        self._dark_mode=True
         self.api_client=create_api_client()
         self.selection={'tractor':None,'implement':None,'field':None}
         self.screen_manager=ScreenManager(transition=NoTransition())
@@ -47,7 +51,8 @@ class PytracKivyApp(App):
         self.device_settings_screen=DeviceSettingsScreen(
             api_client=self.api_client,on_back=self.show_settings,
             on_navigation_settings=self.dashboard.set_navigation_settings,
-            on_work_mode=self.dashboard.set_work_mode)
+            on_work_mode=self.dashboard.set_work_mode,
+            on_theme_changed=self.set_dark_mode)
         self._add_screen('device_settings',self.device_settings_screen)
         self.master_data_screen=MasterDataScreen(api_url=settings.kivy_api_base_url,
             selection=self.selection,api_client=self.api_client,on_back=self.show_settings,
@@ -56,7 +61,23 @@ class PytracKivyApp(App):
         self.wifi_screen=WifiManager(on_back=self.show_settings)
         self._add_screen('wifi',self.wifi_screen)
         self.screen_manager.current='dashboard'
+        Clock.schedule_once(lambda _dt:self._load_theme(),0)
         return self.screen_manager
+    def _load_theme(self):
+        def worker():
+            try:
+                result=self.api_client.get('/api/navigation-settings')
+                if isinstance(result,dict):
+                    dark=bool(result.get('dark_mode',True))
+                    Clock.schedule_once(lambda _dt:self.set_dark_mode(dark))
+            except Exception:
+                logging.getLogger(__name__).exception('Darkmode konnte nicht geladen werden')
+        threading.Thread(target=worker,daemon=True).start()
+
+    def set_dark_mode(self,dark):
+        self._dark_mode=bool(dark)
+        apply_theme(self.screen_manager,self._dark_mode)
+
     def _add_screen(self,name,widget):
         screen=Screen(name=name);screen.add_widget(widget);self.screen_manager.add_widget(screen)
     def work_order_loaded(self,planning,guidance,objects):
@@ -71,8 +92,10 @@ class PytracKivyApp(App):
         self.dashboard.selection_changed()
         self.dashboard.refresh()
     def show_settings(self):
+        Clock.schedule_once(lambda _dt:self.set_dark_mode(self._dark_mode),0)
         self.screen_manager.current='settings';self.settings_screen.load_choices();self.settings_screen.load_navigation_settings()
     def show_device_settings(self):
+        Clock.schedule_once(lambda _dt:self.set_dark_mode(self._dark_mode),0)
         self.screen_manager.current="device_settings"
         self.device_settings_screen.load_settings()
     def show_master_data(self):

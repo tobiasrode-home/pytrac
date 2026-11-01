@@ -14,6 +14,7 @@ class NavigationSettingsData(BaseModel):
     imu_roll_offset_deg: float = Field(default=0., ge=-45., le=45., allow_inf_nan=False)
     work_mode: Literal["manual", "confirmed", "automatic"] = "confirmed"
     display_brightness_percent: int = Field(default=75, ge=10, le=100)
+    dark_mode: bool = True
 
 def get_or_create(db):
     # Additive Bestandsmigration für bereits vorhandene tractor.db.
@@ -36,6 +37,11 @@ def get_or_create(db):
         if "display_brightness_percent" not in existing:
             with bind.begin() as conn:
                 conn.execute(text("ALTER TABLE navigation_settings ADD COLUMN display_brightness_percent INTEGER NOT NULL DEFAULT 75"))
+    if "navigation_settings" in inspector.get_table_names():
+        existing={col['name'] for col in inspect(bind).get_columns('navigation_settings')}
+        if 'dark_mode' not in existing:
+            with bind.begin() as conn:
+                conn.execute(text("ALTER TABLE navigation_settings ADD COLUMN dark_mode INTEGER NOT NULL DEFAULT 1"))
     item=db.get(NavigationSettings,1)
     if item is None:
         item=NavigationSettings(id=1,imu_heading_offset_deg=0.,imu_roll_offset_deg=0.)
@@ -51,7 +57,8 @@ def read_settings(db:Session=Depends(get_db)):
         imu_heading_offset_deg=item.imu_heading_offset_deg,
         imu_roll_offset_deg=item.imu_roll_offset_deg,
         work_mode=item.work_mode or "confirmed",
-        display_brightness_percent=item.display_brightness_percent)
+        display_brightness_percent=item.display_brightness_percent,
+        dark_mode=bool(item.dark_mode))
 
 @router.put('')
 def update_settings(data:NavigationSettingsData,db:Session=Depends(get_db)):
@@ -60,6 +67,7 @@ def update_settings(data:NavigationSettingsData,db:Session=Depends(get_db)):
     item.imu_roll_offset_deg=data.imu_roll_offset_deg
     item.work_mode=data.work_mode
     item.display_brightness_percent=data.display_brightness_percent
+    item.dark_mode=int(data.dark_mode)
     db.commit()
     return data
 
@@ -81,6 +89,7 @@ class DeviceSettingsUpdate(BaseModel):
     imu_heading_offset_deg: Optional[float] = Field(default=None, ge=-180, le=180, allow_inf_nan=False)
     imu_roll_offset_deg: Optional[float] = Field(default=None, ge=-45, le=45, allow_inf_nan=False)
     display_brightness_percent: Optional[int] = Field(default=None, ge=10, le=100)
+    dark_mode: Optional[bool] = None
 
 @router.patch('/device-settings')
 def update_device_settings(data: DeviceSettingsUpdate, db: Session = Depends(get_db)):
@@ -95,4 +104,5 @@ def update_device_settings(data: DeviceSettingsUpdate, db: Session = Depends(get
         imu_heading_offset_deg=item.imu_heading_offset_deg,
         imu_roll_offset_deg=item.imu_roll_offset_deg,
         work_mode=item.work_mode or 'confirmed',
-        display_brightness_percent=item.display_brightness_percent)
+        display_brightness_percent=item.display_brightness_percent,
+        dark_mode=bool(item.dark_mode))

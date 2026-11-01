@@ -11,3 +11,4 @@ class NavigationSettings(Base):
 
     display_brightness_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=75)
     work_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="confirmed")
+    dark_mode: Mapped[bool] = mapped_column(Integer, nullable=False, default=1)
