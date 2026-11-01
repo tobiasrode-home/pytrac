@@ -15,6 +15,7 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.widget import Widget
+from kivy.uix.floatlayout import FloatLayout
 
 from pytrac_kivy.ui.precision_2d import Precision2D
 from pytrac_kivy.ui.guidance_navigation import GuidanceNavigator
@@ -93,7 +94,16 @@ class WorkDashboard(BoxLayout):
         self.map_view = None
         self.field_overlay = None
         self.guidance_overlay = None
-        body.add_widget(self.precision_view)
+        map_layer=FloatLayout()
+        map_layer.add_widget(self.precision_view)
+        self.event_button=Button(text='',size_hint=(None,None),size=(dp(116),dp(78)),
+                                 pos_hint={'right':.985,'center_y':.52},
+                                 background_normal='',background_color=GREEN,
+                                 font_size='19sp',bold=True,halign='center')
+        self.event_button.bind(on_release=lambda *_:self._press_event_button())
+        map_layer.add_widget(self.event_button)
+        body.add_widget(map_layer)
+        self._update_event_button()
 
         # Interne Statuslabels bleiben für bestehende Abläufe und Fehlermeldungen
         # erhalten, werden aber NICHT als rechte Seitenleiste angezeigt.
@@ -116,8 +126,6 @@ class WorkDashboard(BoxLayout):
             ('Nächste Spur',self.next_track),
         ):
             footer.add_widget(self._button(title,callback))
-        self.record_button=self._button('GPS: pausiert',self.toggle_record_override)
-        footer.add_widget(self.record_button)
         self.finish_button=self._button('Gerät beenden',self.request_early_finish)
         footer.add_widget(self.finish_button)
         self._update_record_button()
@@ -340,37 +348,79 @@ class WorkDashboard(BoxLayout):
         except ValueError as exc:self.message_label.text=str(exc)
 
     def _update_record_button(self):
-        if hasattr(self, 'finish_button'):
+        # Kompatibilitätsname für bestehende Aufrufer; kein GPS-Schalter mehr.
+        if hasattr(self,'finish_button'):
             active=bool(self.navigator and self.navigator.state.active)
             self.finish_button.disabled=not active
-            self.finish_button.opacity=1.0 if active else 0.45
-        """Status und Bedienknopf für manuelle GPS-Übersteuerung."""
-        if self.record_override is None:
-            self.record_button.text=('GPS: läuft\
-AUTO' if self.recording
-                                     else 'GPS: pausiert\
-AUTO')
-        else:
-            self.record_button.text=('GPS: läuft\
-MANUELL' if self.recording
-                                     else 'GPS: pausiert\
-MANUELL')
+            self.finish_button.opacity=1.0 if active else .45
+        self._update_event_button()
 
-    def toggle_record_override(self):
-        """Manuelle Aufnahme unabhängig von der bestätigten Geräteposition.
-
-        Tippen wechselt den aktuellen Aufnahmestatus. Die nächste
-        Gerätebestätigung gibt die Kontrolle wieder an die Automatik zurück.
-        """
-        if not self.navigator:
-            self.message_label.text='Zuerst einen Arbeitsauftrag laden'
+    def _update_event_button(self):
+        if not hasattr(self,'event_button'):
             return
-        self.record_override=not self.recording
-        self.recording=self.record_override
+        button=self.event_button
+        mode=getattr(self,'work_mode','confirmed')
+        nav=self.navigator
+        if mode=='manual':
+            button.opacity=1
+            button.disabled=nav is None
+            button.text='AKTIV' if nav and nav.state.active else 'BEREIT'
+            button.background_color=(.65,.27,.16,1) if nav and nav.state.active else GREEN
+            return
+        fix=nav.last_fix if nav else None
+        distance=fix.get('event_distance_m') if fix else None
+        action=fix.get('event_action') if fix else None
+        # In der Nähe des jeweils anstehenden Start-/Endpunktes anzeigen.
+        visible=action in ('lower','raise') and distance is not None and distance<=5.0
+        button.opacity=1 if visible else 0
+        button.disabled=(not visible or mode=='automatic' or distance>0.50)
+        if visible:
+            button.text=f'{distance:.2f} m\n'+('EINSETZEN' if action=='lower' else 'AUSHEBEN') if mode=='confirmed' else f'{distance:.2f} m'
+        else:
+            button.text=''
+        button.background_color=GREEN if not button.disabled else (.3,.36,.38,1)
+
+    def _press_event_button(self):
+        nav=self.navigator
+        if not nav:return
+        mode=getattr(self,'work_mode','confirmed')
+        if mode=='manual':
+            state=nav.state
+            if state.active:
+                state.active=False
+                state.confirmed_raise=True
+                state.pending_action=None
+                self.recording=False
+                self.message_label.text='Manuell: Arbeitsgerät BEREIT'
+            else:
+                state.active=True
+                state.confirmed_lower=True
+                state.confirmed_raise=False
+                self.recording=True
+                self.message_label.text='Manuell: Arbeitsgerät AKTIV'
+            self.record_override=None
+            self._update_record_button()
+            self.update_selection()
+            return
+        if mode!='confirmed':return
+        fix=nav.last_fix or {}
+        action=fix.get('event_action')
+        distance=fix.get('event_distance_m')
+        if action not in ('lower','raise') or distance is None or distance>0.50:
+            return
+        # Die Bestätigung ist innerhalb von 50 cm möglich; keine Popup-Blockade.
+        try:
+            nav.confirm(action,stopped=True,distance_tolerance_m=.50)
+        except (ValueError,TypeError) as exc:
+            self.message_label.text=str(exc)
+            return
+        self.record_override=None
+        self.recording=action=='lower'
+        self.message_label.text=('Einsetzen bestätigt · Gerät AKTIV' if action=='lower'
+                                 else 'Ausheben bestätigt · Gerät BEREIT')
         self._update_record_button()
-        self.message_label.text=('GPS-Aufnahme aktiviert – Arbeitsfläche nur bei aktivem Gerät'
-                                 if self.recording else
-                                 'GPS-Aufnahme pausiert')
+        self.update_selection()
+        if action=='raise':self.next_track()
 
     def request_early_finish(self):
         """Manuelles vorzeitiges Ausheben, unabhängig vom Arbeitsmodus.
@@ -528,6 +578,7 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
 
     def set_work_mode(self, mode):
         self.work_mode = mode if mode in ('manual', 'confirmed', 'automatic') else 'confirmed'
+        self._update_event_button()
 
     def _automatic_event(self, fix, data):
         """Automatically change recording state at the stop point; no hardware actuation."""
@@ -668,11 +719,12 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
             except Exception as exc:
                 self.recording=False
                 self._update_record_button()
-                self.message_label.text=f'GPS-Speicherfehler: {exc} · nach Fehlerbehebung GPS-Knopf drücken'
+                self.message_label.text=f'GPS-Speicherfehler: {exc} · GPS und Gerätestatus prüfen'
         if self.navigator:
             fix=self.navigator.update(lon,lat,gps_valid=valid) if valid else self.navigator.update(0,0,gps_valid=False)
             if fix:
                 self._update_popup_distance()
+                self._update_event_button()
                 signed=fix['signed_offset_m']
                 self.steering_bar.update(signed, reverse=self._driving_reverse(data))
                 self.offset_label.text=(f'Spurabweichung: {abs(signed):.2f} m '
@@ -680,8 +732,6 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                 self.remaining_label.text=f"Bis Spurende: {fix['remaining_m']:.1f} m"
                 self._automatic_event(fix, data)
                 action=fix['event_action']
-                if action and fix.get('event_distance_m') is not None and fix['event_distance_m']<=5.0:
-                    self._show_event_popup(action) if getattr(self,'work_mode','confirmed')=='confirmed' else None
                 if action:
                     self.action_label.text=(('Absenken' if action=='lower' else 'Ausheben')
                                             + f" · Stopppunkt {fix['event_distance_m']:.1f} m")
@@ -689,6 +739,7 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                     self.action_label.text='Spur abgeschlossen · nächste Spur wählen'
             else:
                 self._update_popup_distance()
+                self._update_event_button()
                 self.steering_bar.update(None)
                 self.offset_label.text='Spurabweichung: GPS fehlt'
                 self.remaining_label.text='Strecke: —'
@@ -699,6 +750,7 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         if self.abstract_map:
             self.precision_view.set_guidance_text(self.steering_bar.label.text)
             self.precision_view.update(data,self.navigator)
+        self._update_event_button()
         self.update_selection()
         if self.on_status:self.on_status(self.message_label.text)
 
