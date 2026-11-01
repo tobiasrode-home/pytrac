@@ -98,7 +98,7 @@ class WorkDashboard(BoxLayout):
         # Der Bedienknopf ist ein Overlay-Kind der Ansicht und erzeugt keine
         # zusätzliche Layout-Zeile oder einen umschliessenden Container.
         body.add_widget(self.precision_view)
-        self.event_button=Button(text='',size_hint=(None,None),size=(dp(116),dp(78)),
+        self.event_button=Button(text='',size_hint=(None,None),size=(dp(148),dp(78)),
                                  background_normal='',background_color=GREEN,
                                  font_size='19sp',bold=True,halign='center')
         self.event_button.bind(on_release=lambda *_:self._press_event_button())
@@ -364,8 +364,15 @@ class WorkDashboard(BoxLayout):
             return
         view=self.precision_view
         button=self.event_button
-        button.pos=(view.right-button.width-dp(12),
-                    view.y+(view.height-button.height)*0.52)
+        # Zwischen der oberen Statuskarte ARBEITSGERÄT und der unteren
+        # SICHTBEREICH-Karte. Kein zusätzlicher Layout-Container.
+        pad = dp(12)
+        lower_top = view.y + pad + dp(63)
+        upper_bottom = view.top - pad - dp(58)
+        gap = dp(8)
+        button.width = dp(148)
+        button.height = max(0, upper_bottom - lower_top - 2 * gap)
+        button.pos = (view.right - pad - button.width, lower_top + gap)
 
     def _update_event_button(self):
         if not hasattr(self,'event_button'):
