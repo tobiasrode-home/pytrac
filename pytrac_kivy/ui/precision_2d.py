@@ -236,20 +236,49 @@ class Precision2D(Widget):
             pad = dp(12)
             status_width = min(dp(142), max(dp(95), w * .25))
             status_height = dp(58)
-            def status_card(caption, value, sx, sy):
-                self._panel(sx, sy, status_width, status_height, .93)
+            def status_card(caption, value, sx, sy, fill=None):
+                if fill is None:
+                    self._panel(sx, sy, status_width, status_height, .93)
+                    title_color = ((.49, .70, .71, 1) if self.dark_mode
+                                   else (.24, .29, .34, 1))
+                    value_color = ((.89, .96, .96, 1) if self.dark_mode
+                                   else (.06, .08, .10, 1))
+                else:
+                    Color(*fill)
+                    RoundedRectangle(pos=(sx, sy),
+                                     size=(status_width, status_height),
+                                     radius=[dp(12)])
+                    Color(0, 0, 0, .24)
+                    Line(rounded_rectangle=(sx, sy, status_width,
+                                            status_height, dp(12)), width=1)
+                    title_color = (0, 0, 0, .76)
+                    value_color = (0, 0, 0, 1)
                 self._text(caption, sx + status_width / 2, sy + dp(43),
-                           10, (.49, .70, .71, 1) if self.dark_mode else (.24,.29,.34,1), False)
+                           10, title_color, False)
                 self._text(value, sx + status_width / 2, sy + dp(18),
-                           14, (.89, .96, .96, 1) if self.dark_mode else (.06,.08,.10,1))
+                           14, value_color)
 
             gps, track, implement = self.hud_status
-            # GPS oben links, Arbeitsgerät oben rechts.
-            status_card('GPS', gps, x0 + pad, y0 + h - pad - status_height)
+            gps_normalized = str(gps).strip().casefold()
+            implement_normalized = str(implement).strip().casefold()
+            green = (.28, .79, .40, 1)
+            yellow = (1.0, .83, .24, 1)
+            red = (.95, .33, .33, 1)
+            # Nur explizit erkannte RTK-Qualitaet ist gruen/gelb.
+            gps_fill = (green if gps_normalized in ('fix', 'fixed', 'rtk fix', 'rtk fixed')
+                        else yellow if gps_normalized in ('float', 'rtk float')
+                        else red)
+            implement_fill = (green if implement_normalized == 'aktiv'
+                              else yellow if implement_normalized == 'bereit'
+                              else None)
+            status_card('GPS', gps, x0 + pad,
+                        y0 + h - pad - status_height, gps_fill)
             status_card('ARBEITSGERÄT', implement,
-                        x0 + w - pad - status_width, y0 + h - pad - status_height)
-            # Spur unten links, direkt über der Geschwindigkeitskarte.
-            status_card('SPUR', track, x0 + pad, y0 + pad + dp(63) + dp(8))
+                        x0 + w - pad - status_width,
+                        y0 + h - pad - status_height, implement_fill)
+            # Spur unten links bleibt unveraendert.
+            status_card('SPUR', track, x0 + pad,
+                        y0 + pad + dp(63) + dp(8))
             # HUD-Elemente unabhängig von gültigen GPS-Daten
             pad=dp(12)
             self._panel(x0+pad,y0+pad,dp(148),dp(63))
