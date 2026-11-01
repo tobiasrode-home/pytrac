@@ -37,6 +37,8 @@ class PytracKivyApp(App):
         self.api_client=create_api_client()
         self.selection={'tractor':None,'implement':None,'field':None}
         self.screen_manager=ScreenManager(transition=NoTransition())
+        # Keep all screens invisible until the saved theme has been loaded.
+        self.screen_manager.opacity = 0
         self.dashboard=WorkDashboard(api_url=settings.kivy_api_base_url,selection=self.selection,
             api_client=self.api_client,on_settings=self.show_settings,
             refresh_interval=settings.kivy_refresh_interval)
@@ -63,34 +65,38 @@ class PytracKivyApp(App):
         self.wifi_screen=WifiManager(on_back=self.show_settings)
         self._add_screen('wifi',self.wifi_screen)
         self.screen_manager.current='dashboard'
+        # Load saved colors before showing any screen (no dark-to-light flash).
+        apply_theme(self.screen_manager, self._dark_mode)
         Clock.schedule_once(lambda _dt:self._load_theme(),0)
-        # Dynamisch erzeugte Menüs und Popups erhalten das aktuelle Theme.
-        Clock.schedule_interval(self._refresh_menu_theme, 0.35)
         return self.screen_manager
     def _load_theme(self):
         def worker():
+            dark = True  # Safe fallback if backend is unreachable.
             try:
-                result=self.api_client.get('/api/navigation-settings')
-                if isinstance(result,dict):
-                    dark=bool(result.get('dark_mode',True))
-                    Clock.schedule_once(lambda _dt:self.set_dark_mode(dark))
+                result = self.api_client.get('/api/navigation-settings')
+                if isinstance(result, dict):
+                    dark = bool(result.get('dark_mode', True))
             except Exception:
                 logging.getLogger(__name__).exception('Darkmode konnte nicht geladen werden')
-        threading.Thread(target=worker,daemon=True).start()
+            Clock.schedule_once(lambda _dt: self._finish_theme_load(dark), 0)
+        threading.Thread(target=worker, daemon=True).start()
 
-    def _refresh_menu_theme(self, _dt):
-        # Dashboard-Zeichnung nicht periodisch anfassen; nur Menüs/Dialoge.
-        if self.screen_manager.current != "dashboard":
-            apply_theme(self.screen_manager, self._dark_mode)
-            # Kivy-Popups werden direkt an Window angehängt.
-            for child in Window.children:
-                if child is not self.screen_manager:
-                    apply_theme(child, self._dark_mode)
+    def _finish_theme_load(self, dark):
+        self.set_dark_mode(dark)
+        self.screen_manager.opacity = 1
+
+    def _refresh_menu_theme(self, _dt=0):
+        apply_theme(self.screen_manager, self._dark_mode)
+        for child in list(Window.children):
+            if child is not self.screen_manager:
+                apply_theme(child, self._dark_mode)
 
     def set_dark_mode(self,dark):
         self._dark_mode=bool(dark)
         apply_theme(self.screen_manager,self._dark_mode)
-        self._refresh_menu_theme(0)
+        for child in list(Window.children):
+            if child is not self.screen_manager:
+                apply_theme(child, self._dark_mode)
         self.dashboard.precision_view.set_dark_mode(self._dark_mode)
         self.dashboard.steering_bar.set_dark_mode(self._dark_mode)
 
@@ -109,12 +115,12 @@ class PytracKivyApp(App):
         self.dashboard.selection_changed()
         self.dashboard.refresh()
     def show_settings(self):
-        Clock.schedule_once(lambda _dt:self.set_dark_mode(self._dark_mode),0)
         self.screen_manager.current='settings';self.settings_screen.load_choices();self.settings_screen.load_navigation_settings()
+        self._refresh_menu_theme()
     def show_device_settings(self):
-        Clock.schedule_once(lambda _dt:self.set_dark_mode(self._dark_mode),0)
         self.screen_manager.current="device_settings"
         self.device_settings_screen.load_settings()
+        self._refresh_menu_theme()
     def show_master_data(self):
         self.screen_manager.current='master_data';self.master_data_screen.load_choices()
         self._refresh_menu_theme(0)

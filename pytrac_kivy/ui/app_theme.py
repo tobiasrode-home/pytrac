@@ -1,72 +1,89 @@
-"""PyTrac Menü-Theme: Popups bereits VOR dem Öffnen einfärben."""
+"""Central PyTrac UI theme, applied before widgets become visible.
+
+2D drawing and steering-bar graphics deliberately manage their own colors.
+"""
+from pathlib import Path
 from kivy.core.window import Window
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.spinner import Spinner
 from kivy.uix.popup import Popup
-from kivy.graphics import Color, Rectangle
+from kivy.uix.modalview import ModalView
 from pytrac_kivy.ui.theme_colors import DARK, LIGHT
 
 _dark = True
-_original_open = None
+_original_modal_open = None
+_WHITE = str(Path(__file__).with_name('popup_white.png'))
+
 
 def _skip(widget):
     cls = widget.__class__
     return (cls.__name__ in ('Precision2D', 'Precision2DWidget', 'SteeringIndicator')
             or 'precision_2d' in cls.__module__ or 'steering_bar' in cls.__module__)
 
-def _paint_popup(popup, palette):
-    # Kivy Popup/ModalView nutzt eine eigene Hintergrundgrafik.
-    # Mit einem weißen Textur-Pixel wird background_color tatsächlich sichtbar.
-    try:
-        popup.background = 'atlas://data/images/defaulttheme/modalview-background'
-        popup.background_color = palette['popup']
-    except Exception:
-        pass
-    for attr, key in (('title_color','popup_title'),('separator_color','popup_separator')):
-        if hasattr(popup,attr):
-            setattr(popup,attr,palette[key])
+
+def _style_modal(widget, palette):
+    # The Kivy atlas background is intrinsically dark; tinting it white is not enough.
+    if Path(_WHITE).is_file():
+        widget.background = _WHITE
+        widget.border = (0, 0, 0, 0)
+    widget.background_color = palette['popup']
+    if isinstance(widget, Popup):
+        widget.title_color = palette['popup_title']
+        widget.separator_color = palette['popup_separator']
+
 
 def apply_theme(root, dark):
     global _dark
-    _dark=bool(dark)
-    palette=DARK if _dark else LIGHT
-    Window.clearcolor=palette['window']
-    if root is None: return
-    def walk(widget):
-        if _skip(widget): return
-        if isinstance(widget, Popup): _paint_popup(widget,palette)
-        if not hasattr(widget,'_pytrac_theme_original'):
-            original={}
-            for attr in ('color','background_color','foreground_color','cursor_color','selection_color'):
-                if hasattr(widget,attr):
-                    try: original[attr]=tuple(getattr(widget,attr))
-                    except (TypeError,ValueError): pass
-            widget._pytrac_theme_original=original
-        orig=widget._pytrac_theme_original
+    _dark = bool(dark)
+    palette = DARK if _dark else LIGHT
+    Window.clearcolor = palette['window']
+    if root is None:
+        return
+    def visit(widget):
+        if _skip(widget):
+            return
+        if not hasattr(widget, '_pytrac_theme_original'):
+            original = {}
+            for attr in ('color', 'background_color', 'foreground_color', 'cursor_color'):
+                if hasattr(widget, attr):
+                    try:
+                        original[attr] = tuple(getattr(widget, attr))
+                    except (TypeError, ValueError):
+                        pass
+            widget._pytrac_theme_original = original
+        if isinstance(widget, ModalView):
+            _style_modal(widget, palette)
         if _dark:
-            # Bewahrt die existierenden individuellen Darkmode-Farben.
-            for attr,value in orig.items(): setattr(widget,attr,value)
-        elif isinstance(widget,(Button,Spinner)):
-            widget.background_color=palette['button']
-            widget.color=palette['button_text']
-        elif isinstance(widget,TextInput):
-            widget.background_color=palette['input']
-            widget.foreground_color=palette['input_text']
-            widget.cursor_color=palette['input_text']
-        elif isinstance(widget,Label):
-            widget.color=palette['text']
-        for child in widget.children: walk(child)
-    walk(root)
+            for attr, value in widget._pytrac_theme_original.items():
+                setattr(widget, attr, value)
+            # The popup background must not revert to Kivy's dark atlas.
+            if isinstance(widget, ModalView):
+                _style_modal(widget, palette)
+        elif isinstance(widget, (Button, Spinner)):
+            widget.background_normal = ''
+            widget.background_down = ''
+            widget.background_color = palette['button']
+            widget.color = palette['button_text']
+        elif isinstance(widget, TextInput):
+            widget.background_color = palette['input']
+            widget.foreground_color = palette['input_text']
+            widget.cursor_color = palette['input_text']
+        elif isinstance(widget, Label):
+            widget.color = palette['text']
+        for child in list(widget.children):
+            visit(child)
+    visit(root)
+
 
 def install_popup_theme():
-    """Einmalig installieren: Popup.open() färbt vor dem ersten Frame ein."""
-    global _original_open
-    if _original_open is not None: return
-    _original_open=Popup.open
-    def themed_open(self,*args,**kwargs):
-        apply_theme(self,_dark)
-        # Beim Öffnen ist der Popup-Inhalt vollständig vorhanden; keine Verzögerung.
-        return _original_open(self,*args,**kwargs)
-    Popup.open=themed_open
+    """Theme any Popup/ModalView synchronously, before the first visible frame."""
+    global _original_modal_open
+    if _original_modal_open is not None:
+        return
+    _original_modal_open = ModalView.open
+    def themed_open(self, *args, **kwargs):
+        apply_theme(self, _dark)
+        return _original_modal_open(self, *args, **kwargs)
+    ModalView.open = themed_open
