@@ -13,6 +13,7 @@ _ASSETS = Path(__file__).resolve().parent.parent / 'assets' / 'precision'
 class Precision2D(Widget):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.dark_mode = True
         self.state = None
         self.navigator = None
         self.progress_points = []
@@ -29,6 +30,10 @@ class Precision2D(Widget):
             except Exception:
                 self._textures[name] = None
         self.bind(pos=self.redraw, size=self.redraw)
+
+    def set_dark_mode(self, dark):
+        self.dark_mode = bool(dark)
+        self.redraw()
 
     def set_status(self, gps, track, implement):
         status = (str(gps), str(track), str(implement))
@@ -59,7 +64,8 @@ class Precision2D(Widget):
             pass
         self.redraw()
 
-    def _text(self, value, x, y, size=15, color=(.89,.96,.96,1), bold=True):
+    def _text(self, value, x, y, size=15, color=None, bold=True):
+        if color is None: color=(.89,.96,.96,1) if self.dark_mode else (.06,.08,.10,1)
         label = CoreLabel(text=str(value), font_size=dp(size), color=color, bold=bold)
         label.refresh()
         texture = label.texture
@@ -67,9 +73,9 @@ class Precision2D(Widget):
         Rectangle(texture=texture, pos=(x-texture.width/2,y-texture.height/2), size=texture.size)
 
     def _panel(self, x,y,w,h,alpha=.95):
-        Color(.055,.105,.14,alpha)
+        Color(*((.055,.105,.14,alpha) if self.dark_mode else (.97,.98,1,alpha)))
         RoundedRectangle(pos=(x,y),size=(w,h),radius=[dp(12)])
-        Color(.20,.35,.38,.65)
+        Color(*((.20,.35,.38,.65) if self.dark_mode else (.53,.59,.65,.8)))
         Line(rounded_rectangle=(x,y,w,h,dp(12)),width=1)
 
     def redraw(self, *_):
@@ -79,10 +85,10 @@ class Precision2D(Widget):
         if w < 10 or h < 10:
             return
         with self.canvas:
-            Color(.047,.092,.12,1)
+            Color(*((.047,.092,.12,1) if self.dark_mode else (1,1,1,1)))
             Rectangle(pos=self.pos,size=self.size)
             terrain=self._textures.get('terrain')
-            if terrain is not None:
+            if terrain is not None and self.dark_mode:
                 Color(1,1,1,.54)
                 Rectangle(texture=terrain,pos=self.pos,size=self.size,tex_coords=(0,0,w/dp(512),0,w/dp(512),h/dp(512),0,h/dp(512)))
             scale=h/max(20.0,self.zoom_m)
@@ -92,14 +98,14 @@ class Precision2D(Widget):
             for offset in range(-10,11):
                 xx=cx+offset*10*scale
                 if x0 <= xx <= x0+w:
-                    Color(.24,.41,.43,.19 if offset else .36)
+                    Color(*((.24,.41,.43,.19 if offset else .36) if self.dark_mode else (.37,.42,.47,.18 if offset else .32)))
                     Line(points=[xx,y0,xx,y0+h],width=1)
             for meters in (10,20,30,50,75,100,150):
                 yy=cy+meters*scale
                 if yy > y0+h-dp(100):continue
-                Color(.25,.42,.44,.36)
+                Color(*((.25,.42,.44,.36) if self.dark_mode else (.39,.44,.49,.30)))
                 Line(points=[x0+dp(15),yy,x0+w-dp(15),yy],width=1)
-                self._text(f'{meters} m',x0+dp(40),yy+dp(12),10,(.50,.69,.71,1),False)
+                self._text(f'{meters} m',x0+dp(40),yy+dp(12),10,(.50,.69,.71,1) if self.dark_mode else (.24,.29,.34,1),False)
             state=self.state or {}
             nav=self.navigator
             coords_ok=False
@@ -190,7 +196,7 @@ class Precision2D(Widget):
                         Color(*color)
                         Line(points=pts,width=dp(3),joint='round')
                     else:
-                        color=(.37,.62,.67,.60)
+                        color=(.37,.62,.67,.60) if self.dark_mode else (.22,.38,.47,.85)
                         Color(*color)
                         Line(points=pts,width=dp(1.7),joint='round')
                     # Pfeil am gespeicherten Spuranfang; zeigt zur zweiten Koordinate.
@@ -233,9 +239,9 @@ class Precision2D(Widget):
             def status_card(caption, value, sx, sy):
                 self._panel(sx, sy, status_width, status_height, .93)
                 self._text(caption, sx + status_width / 2, sy + dp(43),
-                           10, (.49, .70, .71, 1), False)
+                           10, (.49, .70, .71, 1) if self.dark_mode else (.24,.29,.34,1), False)
                 self._text(value, sx + status_width / 2, sy + dp(18),
-                           14, (.89, .96, .96, 1))
+                           14, (.89, .96, .96, 1) if self.dark_mode else (.06,.08,.10,1))
 
             gps, track, implement = self.hud_status
             # GPS oben links, Arbeitsgerät oben rechts.
@@ -250,10 +256,10 @@ class Precision2D(Widget):
             try:speed=f'{float(state.get("speed_mps") or 0)*3.6:.1f}'
             except (ValueError,TypeError):speed='–'
             self._text(speed+' km/h',x0+pad+dp(74),y0+pad+dp(36),18)
-            self._text('GESCHWINDIGKEIT',x0+pad+dp(74),y0+pad+dp(14),9,(.49,.70,.71,1),False)
+            self._text('GESCHWINDIGKEIT',x0+pad+dp(74),y0+pad+dp(14),9,(.49,.70,.71,1) if self.dark_mode else (.24,.29,.34,1),False)
             self._panel(x0+w-dp(160),y0+pad,dp(148),dp(63))
             self._text(f'{self.zoom_m:.0f} m',x0+w-dp(86),y0+pad+dp(36),18)
-            self._text('SICHTBEREICH',x0+w-dp(86),y0+pad+dp(14),9,(.49,.70,.71,1),False)
+            self._text('SICHTBEREICH',x0+w-dp(86),y0+pad+dp(14),9,(.49,.70,.71,1) if self.dark_mode else (.24,.29,.34,1),False)
             # Gleiche Korrekturanweisung wie die obere Lenkhilfe, kein zweites Vorzeichenmodell.
             guidance = self.guidance_text
             if guidance.startswith('Lenkhilfe:'):
@@ -263,4 +269,4 @@ class Precision2D(Widget):
             else:
                 guidance = guidance.upper()
             self._panel(cx-dp(135), y0+h-dp(73), dp(270), dp(53))
-            self._text(guidance, cx, y0+h-dp(46), 18, (.65,1,.79,1))
+            self._text(guidance, cx, y0+h-dp(46), 18, (.65,1,.79,1) if self.dark_mode else (.04,.15,.11,1))

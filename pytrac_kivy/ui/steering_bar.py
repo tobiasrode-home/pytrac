@@ -13,8 +13,13 @@ class SteeringIndicator(Widget):
     """Ein Balken, der vom Mittelpunkt in die benötigte Lenkrichtung ausschlägt."""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.dark_mode = True
         self.correction = None
         self.bind(pos=self._draw, size=self._draw)
+
+    def set_dark_mode(self, dark):
+        self.dark_mode = bool(dark)
+        self._draw()
 
     def set_correction(self, correction):
         self.correction = correction
@@ -30,11 +35,11 @@ class SteeringIndicator(Widget):
         margin = dp(14)
         usable = max(1., w - 2 * margin)
         with self.canvas:
-            Color(.12, .15, .15, 1)
+            Color(*((.12, .15, .15, 1) if self.dark_mode else (1, 1, 1, 1)))
             RoundedRectangle(pos=(x, y + dp(6)), size=(w, h - dp(12)), radius=[dp(9)])
-            Color(.35, .38, .38, 1)
+            Color(*((.35, .38, .38, 1) if self.dark_mode else (.45, .48, .52, 1)))
             Rectangle(pos=(x + margin, cy - dp(1)), size=(usable, dp(2)))
-            Color(.9, .9, .9, 1)
+            Color(*((.9, .9, .9, 1) if self.dark_mode else (.08, .08, .08, 1)))
             Rectangle(pos=(x + w/2 - dp(1), y + dp(8)), size=(dp(2), h - dp(16)))
             if self.correction is not None:
                 amount = max(-1., min(1., float(self.correction)))
@@ -52,6 +57,10 @@ class SteeringBar(BoxLayout):
         self.indicator = SteeringIndicator()
         # Text nicht mehr als eigene Zeile anzeigen; Wert steht im 2D-HUD.
         self.add_widget(self.indicator)
+
+    def set_dark_mode(self, dark):
+        self.indicator.set_dark_mode(dark)
+        self.label.color=(1,1,1,1) if dark else (0,0,0,1)
 
     def update(self, signed_offset_m=None, reverse=False):
         if signed_offset_m is None:

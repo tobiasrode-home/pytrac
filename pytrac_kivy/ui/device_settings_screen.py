@@ -9,6 +9,7 @@ from kivy.uix.label import Label
 from kivy.uix.slider import Slider
 from kivy.uix.switch import Switch
 from kivy.uix.textinput import TextInput
+from kivy.uix.popup import Popup
 from pytrac_kivy.ui.display_brightness import read_brightness, set_brightness
 from pytrac_kivy.ui.fullscreen_keyboard import bind_fullscreen_keyboard
 
@@ -26,6 +27,9 @@ class DeviceSettingsScreen(BoxLayout):
         self._request_id=0
         self._saving=False
         self._loaded=False
+        self._saved_snapshot=None
+        self._pending_back=False
+        self._confirm_popup=None
 
         header=BoxLayout(size_hint_y=None,height=dp(52),spacing=dp(8))
         header.add_widget(self._button('Zurück',lambda *_:self.go_back(),width=dp(145)))
@@ -104,9 +108,54 @@ class DeviceSettingsScreen(BoxLayout):
         for value,button in self.brightness_buttons.items():
             button.background_color=(.16,.43,.28,1) if value==percent else (.25,.28,.32,1)
 
+    def _snapshot(self):
+        # Strings beibehalten, damit auch unfertige Eingaben als Änderung zählen.
+        return (int(round(self.mode_slider.value)), self.heading_input.text,
+                self.roll_input.text, self.brightness_value,
+                bool(self.dark_mode_switch.active))
+
+    def _is_dirty(self):
+        return self._loaded and self._saved_snapshot is not None and self._snapshot() != self._saved_snapshot
+
     def go_back(self):
+        if self._saving:
+            self.status.text='Bitte warten: Einstellungen werden gespeichert.'
+            return
+        if self._is_dirty():
+            self._show_unsaved_popup()
+            return
         if self.on_back:
             self.on_back()
+
+    def _show_unsaved_popup(self):
+        if self._confirm_popup:
+            return
+        content=BoxLayout(orientation='vertical',padding=dp(14),spacing=dp(12))
+        content.add_widget(Label(text='Es gibt ungespeicherte Änderungen.\nWas möchtest du tun?',
+                                 halign='center',valign='middle'))
+        row=BoxLayout(size_hint_y=None,height=dp(62),spacing=dp(8))
+        discard=self._button('Verwerfen',lambda *_:self._discard_and_back())
+        save=self._button('Speichern',lambda *_:self._save_from_popup())
+        stay=self._button('Schließen / bleiben',lambda *_:self._close_unsaved_popup())
+        for btn in (discard,save,stay):row.add_widget(btn)
+        content.add_widget(row)
+        self._confirm_popup=Popup(title='Ungespeicherte Einstellungen',content=content,
+                                  size_hint=(.86,None),height=dp(210),auto_dismiss=False)
+        self._confirm_popup.open()
+
+    def _close_unsaved_popup(self):
+        popup=self._confirm_popup
+        self._confirm_popup=None
+        if popup:popup.dismiss()
+
+    def _discard_and_back(self):
+        self._close_unsaved_popup()
+        if self.on_back:self.on_back()
+
+    def _save_from_popup(self):
+        # Speichern und auf dem Geräte-Einstellungsbildschirm bleiben.
+        self._close_unsaved_popup()
+        self.save()
 
     def load_settings(self):
         self._request_id+=1
@@ -134,6 +183,7 @@ class DeviceSettingsScreen(BoxLayout):
         self.roll_input.text=str(data.get('imu_roll_offset_deg',0))
         self._select_brightness(min((25,50,75,100),key=lambda v:abs(v-int(data.get('display_brightness_percent',75)))))
         self._loaded=True
+        self._saved_snapshot=self._snapshot()
         self.save_button.disabled=False
         self.status.text='Einstellungen aus der Datenbank geladen'
 
@@ -187,6 +237,8 @@ class DeviceSettingsScreen(BoxLayout):
         if not isinstance(data,dict):
             self.status.text='Ungültige Speicherantwort'
             return
+        # Erst nach bestätigter Backend-Antwort gilt der Stand als gespeichert.
+        self._saved_snapshot=self._snapshot()
         if self.on_theme_changed:
             self.on_theme_changed(bool(data.get('dark_mode',True)))
         if self.on_work_mode:
