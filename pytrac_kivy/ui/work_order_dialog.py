@@ -9,19 +9,29 @@ from kivy.uix.scrollview import ScrollView
 import threading
 
 
+def _picker_button(text, height):
+    """Same dimensions and default colors as SettingsScreen.make_button."""
+    return Button(
+        text=text, size_hint_y=None, height=height,
+        background_normal='', background_down='',
+        background_color=(.16, .43, .28, 1),
+        color=(1, 1, 1, 1), font_size='17sp',
+    )
+
+
 def open_work_order_dialog(api_client, on_loaded, selection=None):
     selection=selection or {}
     filters={key: (selection.get(key) or {}).get("id") for key in ("tractor", "implement", "field")}
-    content=BoxLayout(orientation='vertical',spacing=dp(8),padding=dp(8))
+    content=BoxLayout(orientation='vertical',spacing=dp(6),padding=dp(10))
     status=Label(text='Gespeicherte Arbeiten werden geladen …',size_hint_y=None,height=dp(35))
     content.add_widget(status)
     scroll=ScrollView()
-    items=BoxLayout(orientation='vertical',spacing=dp(5),size_hint_y=None)
+    items=BoxLayout(orientation='vertical',spacing=dp(6),size_hint_y=None)
     items.bind(minimum_height=items.setter('height'))
     scroll.add_widget(items)
     content.add_widget(scroll)
-    popup=Popup(title='Arbeitsauftrag laden',content=content,size_hint=(.8,.85))
-    close=Button(text='Schließen',size_hint_y=None,height=dp(44))
+    popup=Popup(title='Arbeitsauftrag auswählen',content=content,size_hint=(.85,.85))
+    close=_picker_button('Abbrechen', dp(48))
     close.bind(on_release=lambda *_:popup.dismiss())
     content.add_widget(close)
 
@@ -33,8 +43,8 @@ def open_work_order_dialog(api_client, on_loaded, selection=None):
         status.text=f'{len(plans)} passende Arbeitsaufträge' if plans else 'Keine Arbeitsaufträge für diese Auswahl gefunden'
         items.clear_widgets()
         for plan in plans:
-            label=f"{plan.get('name','Ohne Namen')}  ·  #{plan.get('id')}"
-            button=Button(text=label,size_hint_y=None,height=dp(54))
+            label=plan.get('name') or f"Arbeitsauftrag #{plan.get('id')}"
+            button=_picker_button(label, dp(58))
             def choose(_button, selected=plan):
                 status.text=f"Lade {selected.get('name','Arbeitsauftrag')} …"
                 def load_session(session_id):
@@ -85,14 +95,14 @@ def open_work_order_dialog(api_client, on_loaded, selection=None):
                             except Exception as exc:
                                 Clock.schedule_once(lambda _dt,error=str(exc):fail(error))
                         threading.Thread(target=worker,daemon=True).start()
-                    new_btn=Button(text='Neuen Einsatz beginnen',size_hint_y=None,height=dp(50))
+                    new_btn=_picker_button('Neuen Einsatz beginnen', dp(58))
                     new_btn.bind(on_release=create_new);content2.add_widget(new_btn)
                     for entry in sessions:
                         title=entry.get('name') or entry.get('started_at','')[:16].replace('T',' ')
-                        b=Button(text=f"Fortsetzen: {title} ({entry.get('point_count',0)} Punkte)",size_hint_y=None,height=dp(50))
+                        b=_picker_button(f"Fortsetzen: {title} ({entry.get('point_count',0)} Punkte)", dp(58))
                         b.bind(on_release=lambda _btn,session_id=entry['id']:pick(session_id))
                         rows.add_widget(b)
-                    cancel=Button(text='Abbrechen',size_hint_y=None,height=dp(44))
+                    cancel=_picker_button('Abbrechen', dp(48))
                     cancel.bind(on_release=lambda *_:session_popup.dismiss());content2.add_widget(cancel)
                     session_popup.open()
                 def session_worker():
