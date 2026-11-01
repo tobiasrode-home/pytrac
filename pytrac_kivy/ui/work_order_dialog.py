@@ -7,15 +7,39 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 import threading
+from pathlib import Path
+from pytrac_kivy.ui.app_theme import apply_theme
+from pytrac_kivy.ui.theme_colors import DARK, LIGHT
+from kivy.app import App
+
+
+def _current_palette():
+    app = App.get_running_app()
+    return DARK if bool(getattr(app, "_dark_mode", True)) else LIGHT
+
+
+def _prepare_popup(popup):
+    """Set popup background and widget colors before the first visible frame."""
+    palette = _current_palette()
+    dark = palette is DARK
+    # Kivy's default Popup background atlas is dark even with a light tint.
+    # An opaque white pixel makes the configured RGBA tint exact.
+    popup.background = str(Path(__file__).with_name("popup_white.png"))
+    popup.border = (0, 0, 0, 0)
+    popup.background_color = palette["popup"]
+    apply_theme(popup, dark)
+    popup.background_color = palette["popup"]
+
 
 
 def _picker_button(text, height):
     """Same dimensions and default colors as SettingsScreen.make_button."""
+    palette = _current_palette()
     return Button(
         text=text, size_hint_y=None, height=height,
         background_normal='', background_down='',
-        background_color=(.16, .43, .28, 1),
-        color=(1, 1, 1, 1), font_size='17sp',
+        background_color=palette["button"],
+        color=palette["button_text"], font_size='17sp',
     )
 
 
@@ -104,6 +128,7 @@ def open_work_order_dialog(api_client, on_loaded, selection=None):
                         rows.add_widget(b)
                     cancel=_picker_button('Abbrechen', dp(48))
                     cancel.bind(on_release=lambda *_:session_popup.dismiss());content2.add_widget(cancel)
+                    _prepare_popup(session_popup)
                     session_popup.open()
                 def session_worker():
                     try:
@@ -114,6 +139,7 @@ def open_work_order_dialog(api_client, on_loaded, selection=None):
                 threading.Thread(target=session_worker,daemon=True).start()
             button.bind(on_release=choose)
             items.add_widget(button)
+        _prepare_popup(popup)
 
     def worker():
         try:
@@ -122,5 +148,6 @@ def open_work_order_dialog(api_client, on_loaded, selection=None):
         except Exception as exc:
             Clock.schedule_once(lambda _dt,error=str(exc):fail(error))
     threading.Thread(target=worker,daemon=True).start()
+    _prepare_popup(popup)
     popup.open()
     return popup
