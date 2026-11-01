@@ -94,16 +94,18 @@ class WorkDashboard(BoxLayout):
         self.map_view = None
         self.field_overlay = None
         self.guidance_overlay = None
-        # Kartenbereich ohne zusätzliche vertikale Abstände direkt unter der Lenkhilfe.
-        map_layer=FloatLayout(size_hint=(1, 1))
-        map_layer.add_widget(self.precision_view)
+        # Die 2D-Ansicht bleibt wie im Original direktes Kind des Body-Layouts.
+        # Der Bedienknopf ist ein Overlay-Kind der Ansicht und erzeugt keine
+        # zusätzliche Layout-Zeile oder einen umschliessenden Container.
+        body.add_widget(self.precision_view)
         self.event_button=Button(text='',size_hint=(None,None),size=(dp(116),dp(78)),
-                                 pos_hint={'right':.985,'center_y':.52},
                                  background_normal='',background_color=GREEN,
                                  font_size='19sp',bold=True,halign='center')
         self.event_button.bind(on_release=lambda *_:self._press_event_button())
-        map_layer.add_widget(self.event_button)
-        body.add_widget(map_layer)
+        self.precision_view.add_widget(self.event_button)
+        self.precision_view.bind(pos=self._position_event_button,
+                                 size=self._position_event_button)
+        self._position_event_button()
         self._update_event_button()
 
         # Interne Statuslabels bleiben für bestehende Abläufe und Fehlermeldungen
@@ -355,6 +357,15 @@ class WorkDashboard(BoxLayout):
             self.finish_button.disabled=not active
             self.finish_button.opacity=1.0 if active else .45
         self._update_event_button()
+
+    def _position_event_button(self, *_args):
+        """Positioniere das Overlay ohne Einfluss auf die 2D-Layoutgroesse."""
+        if not hasattr(self, 'event_button'):
+            return
+        view=self.precision_view
+        button=self.event_button
+        button.pos=(view.right-button.width-dp(12),
+                    view.y+(view.height-button.height)*0.52)
 
     def _update_event_button(self):
         if not hasattr(self,'event_button'):
