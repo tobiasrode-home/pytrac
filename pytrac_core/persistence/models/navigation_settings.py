@@ -8,3 +8,4 @@ class NavigationSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     imu_heading_offset_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     imu_roll_offset_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    imu_pitch_offset_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

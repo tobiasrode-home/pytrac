@@ -36,7 +36,8 @@ class SettingsScreen(BoxLayout):
         header=BoxLayout(size_hint_y=None,height=dp(50),spacing=dp(6))
         header.add_widget(Label(text='[b]Einstellungen[/b]',markup=True,font_size='25sp'))
         header.add_widget(self.make_button('Zur Übersicht',lambda *_:self.go_back(),width=dp(180)))
-        header.add_widget(self.make_button('Stammdaten',lambda *_:self.open_master_data(),width=dp(180)))
+        header.add_widget(self.make_button('Stammdaten',lambda *_:self.open_master_data(),width=dp(160)))
+        header.add_widget(self.make_button('Sensoren',lambda *_:self.open_sensors(),width=dp(160)))
         header.add_widget(self.make_button('Wifi',lambda *_:self.open_wifi_manager(),width=dp(180)))
         self.add_widget(header)
         self.add_widget(Label(text='Arbeitsauftrag auswählen',size_hint_y=None,height=dp(25),bold=True,font_size='18sp'))
@@ -60,7 +61,6 @@ class SettingsScreen(BoxLayout):
         # Freier Raum wächst mit der Displayhöhe. Navigationseinstellungen
         # sitzen direkt über der Helligkeit am unteren Displayrand.
         self.add_widget(BoxLayout(size_hint_y=1))
-        self.add_widget(self.make_button("Sensoren",lambda *_:self.open_sensors(),height=dp(48)))
         brightness=read_brightness()
         brightness_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
         brightness_row.add_widget(Label(text="Displayhelligkeit",size_hint_x=None,width=dp(160)))

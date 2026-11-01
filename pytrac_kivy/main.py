@@ -69,15 +69,17 @@ class PytracKivyApp(App):
         self.dashboard.selection_changed()
         self.dashboard.refresh()
     def show_settings(self):
+        self.sensor_screen.stop_live()
         self.screen_manager.current='settings';self.settings_screen.load_choices()
     def show_sensors(self):
         self.screen_manager.current='sensors'
         self.sensor_screen.load()
+        self.sensor_screen.start_live()
     def show_master_data(self):
         self.screen_manager.current='master_data';self.master_data_screen.load_choices()
     def show_wifi(self):self.screen_manager.current='wifi'
     def selection_changed(self):
         self.dashboard.selection_changed();self.settings_screen.update_selection_buttons()
     def on_stop(self):
-        self.dashboard.stop();self.api_client.close()
+        self.sensor_screen.stop_live();self.dashboard.stop();self.api_client.close()
 if __name__=='__main__':PytracKivyApp().run()
