@@ -14,6 +14,7 @@ from pytrac_core.config import settings
 from pytrac_kivy.dependencies import create_api_client
 from pytrac_kivy.ui.master_data_screen import MasterDataScreen
 from pytrac_kivy.ui.settings_screen import SettingsScreen
+from pytrac_kivy.ui.sensor_screen import SensorScreen
 from pytrac_kivy.ui.wifi_manager import WifiManager
 from pytrac_kivy.ui.work_dashboard import WorkDashboard
 import logging
@@ -39,8 +40,12 @@ class PytracKivyApp(App):
             on_selection_changed=self.selection_changed,on_master_data=self.show_master_data,
             on_wifi_manager=self.show_wifi,on_work_order_loaded=self.work_order_loaded,
             on_work_order_reset=self.reset_work_order,
-            on_navigation_settings=self.dashboard.set_navigation_settings)
+            on_navigation_settings=self.dashboard.set_navigation_settings,
+            on_sensors=self.show_sensors)
         self._add_screen('settings',self.settings_screen)
+        self.sensor_screen=SensorScreen(api_client=self.api_client,on_back=self.show_settings,
+            on_navigation_settings=self.dashboard.set_navigation_settings)
+        self._add_screen('sensors',self.sensor_screen)
         self.master_data_screen=MasterDataScreen(api_url=settings.kivy_api_base_url,
             selection=self.selection,api_client=self.api_client,on_back=self.show_settings,
             on_selection_changed=self.selection_changed)
@@ -48,6 +53,7 @@ class PytracKivyApp(App):
         self.wifi_screen=WifiManager(on_back=self.show_settings)
         self._add_screen('wifi',self.wifi_screen)
         self.screen_manager.current='dashboard'
+        self.sensor_screen.load()
         return self.screen_manager
     def _add_screen(self,name,widget):
         screen=Screen(name=name);screen.add_widget(widget);self.screen_manager.add_widget(screen)
@@ -63,7 +69,10 @@ class PytracKivyApp(App):
         self.dashboard.selection_changed()
         self.dashboard.refresh()
     def show_settings(self):
-        self.screen_manager.current='settings';self.settings_screen.load_choices();self.settings_screen.load_navigation_settings()
+        self.screen_manager.current='settings';self.settings_screen.load_choices()
+    def show_sensors(self):
+        self.screen_manager.current='sensors'
+        self.sensor_screen.load()
     def show_master_data(self):
         self.screen_manager.current='master_data';self.master_data_screen.load_choices()
     def show_wifi(self):self.screen_manager.current='wifi'

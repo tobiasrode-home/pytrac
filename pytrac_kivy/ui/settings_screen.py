@@ -17,7 +17,8 @@ from pytrac_kivy.ui.create_work_order import open_create_work_order
 class SettingsScreen(BoxLayout):
     def __init__(self,api_url,selection,api_client=None,on_back=None,
                  on_selection_changed=None,on_master_data=None,on_wifi_manager=None,
-                 on_work_order_loaded=None,on_work_order_reset=None,on_navigation_settings=None,**kwargs):
+                 on_work_order_loaded=None,on_work_order_reset=None,on_navigation_settings=None,
+                 on_sensors=None,**kwargs):
         super().__init__(orientation='vertical',padding=dp(9),spacing=dp(5),**kwargs)
         self.api_url=api_url.rstrip('/')
         self.api_client=api_client
@@ -29,12 +30,12 @@ class SettingsScreen(BoxLayout):
         self.on_work_order_loaded=on_work_order_loaded
         self.on_work_order_reset=on_work_order_reset
         self.on_navigation_settings=on_navigation_settings
-        self.navigation_options={"imu_heading_offset_deg":0.0,"imu_roll_offset_deg":0.0}
+        self.on_sensors=on_sensors
         self.choices={'tractor':[],'implement':[],'field':[]}
         self.selection_buttons={}
         header=BoxLayout(size_hint_y=None,height=dp(50),spacing=dp(6))
-        header.add_widget(self.make_button('Zurück',lambda *_:self.go_back(),width=dp(145)))
         header.add_widget(Label(text='[b]Einstellungen[/b]',markup=True,font_size='25sp'))
+        header.add_widget(self.make_button('Zur Übersicht',lambda *_:self.go_back(),width=dp(180)))
         header.add_widget(self.make_button('Stammdaten',lambda *_:self.open_master_data(),width=dp(180)))
         header.add_widget(self.make_button('Wifi',lambda *_:self.open_wifi_manager(),width=dp(180)))
         self.add_widget(header)
@@ -59,26 +60,7 @@ class SettingsScreen(BoxLayout):
         # Freier Raum wächst mit der Displayhöhe. Navigationseinstellungen
         # sitzen direkt über der Helligkeit am unteren Displayrand.
         self.add_widget(BoxLayout(size_hint_y=1))
-        self._loading_nav_settings=True
-        self.add_widget(Label(text="GPS und IMU",size_hint_y=None,height=dp(26),
-                              bold=True,font_size="18sp"))
-        nav_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
-        nav_row.add_widget(Label(text="Ausrichtung (°)",size_hint_x=.24))
-        self.heading_offset_input=TextInput(text="0",multiline=False,size_hint_x=.18)
-        bind_fullscreen_keyboard(self.heading_offset_input,"Ausrichtungs-Offset in Grad")
-        nav_row.add_widget(self.heading_offset_input)
-        nav_row.add_widget(Label(text="Neigung (°)",size_hint_x=.24))
-        self.roll_offset_input=TextInput(text="0",multiline=False,size_hint_x=.18)
-        bind_fullscreen_keyboard(self.roll_offset_input,"Neigungs-Offset in Grad (Roll)")
-        nav_row.add_widget(self.roll_offset_input)
-        self.add_widget(nav_row)
-        self.add_widget(self.make_button("GPS-/IMU-Einstellungen speichern",
-                                         lambda *_:self.save_navigation_settings(),
-                                         height=dp(44)))
-        self.add_widget(BoxLayout(size_hint_y=None,height=dp(12)))
-        self._loading_nav_settings=False
-        self._nav_request_serial=0
-        self.load_navigation_settings()
+        self.add_widget(self.make_button("Sensoren",lambda *_:self.open_sensors(),height=dp(48)))
         brightness=read_brightness()
         brightness_row=BoxLayout(size_hint_y=None,height=dp(48),spacing=dp(8))
         brightness_row.add_widget(Label(text="Displayhelligkeit",size_hint_x=None,width=dp(160)))
@@ -95,69 +77,13 @@ class SettingsScreen(BoxLayout):
         self.add_widget(self.brightness_label)
         self.load_choices()
 
+    def open_sensors(self):
+        if self.on_sensors:
+            self.on_sensors()
+
     def load_navigation_settings(self):
-        # Jede neue Abfrage macht ältere Antworten ungültig.
-        self._nav_request_serial+=1
-        serial=self._nav_request_serial
-        def worker():
-            try:
-                data=self.api_client.get("/api/navigation-settings")
-                if not isinstance(data,dict):
-                    raise ValueError("Backend lieferte keine gültigen Einstellungen")
-                Clock.schedule_once(lambda _dt,d=data,n=serial:self._nav_loaded(d,n))
-            except Exception as exc:
-                message=str(exc)
-                Clock.schedule_once(lambda _dt,m=message,n=serial:self._nav_load_failed(m,n))
-        threading.Thread(target=worker,daemon=True).start()
-
-    def _nav_loaded(self,data,serial):
-        if serial!=self._nav_request_serial:return
-        try:
-            self.apply_navigation_settings(data)
-        except (TypeError,ValueError,KeyError) as exc:
-            self._nav_load_failed(str(exc),serial)
-
-    def _nav_load_failed(self,message,serial):
-        if serial!=self._nav_request_serial:return
-        self.status_label.text="Navigationseinstellungen: "+message
-        Popup(title="IMU-Einstellungen konnten nicht geladen werden",
-              content=Label(text="Gespeicherte Werte konnten nicht gelesen werden.\\n"+message),
-              size_hint=(.8,.38)).open()
-
-    def apply_navigation_settings(self,data):
-        self._loading_nav_settings=True
-        try:
-            self.navigation_options=dict(data)
-            self.heading_offset_input.text=str(data.get("imu_heading_offset_deg",0.0))
-            self.roll_offset_input.text=str(data.get("imu_roll_offset_deg",0.0))
-            if self.on_navigation_settings:self.on_navigation_settings(self.navigation_options)
-        finally:
-            self._loading_nav_settings=False
-
-    def save_navigation_settings(self):
-        try:
-            value=float(self.heading_offset_input.text.replace(",","."))
-            if not -180<=value<=180:raise ValueError("Ausrichtungs-Offset muss zwischen -180° und +180° liegen")
-            roll=float(self.roll_offset_input.text.replace(",","."))
-            if not -45<=roll<=45:raise ValueError("Neigungs-Offset muss zwischen -45° und +45° liegen")
-        except ValueError as exc:
-            self.status_label.text="Ungültiger IMU-Offset: "+str(exc)
-            return
-        payload={"imu_heading_offset_deg":value,"imu_roll_offset_deg":roll}
-        self._nav_request_serial+=1  # Ältere Leseantworten dürfen den gespeicherten Wert nicht überschreiben.
-        def worker():
-            try:
-                data=self.api_client.put("/api/navigation-settings",payload)
-                if hasattr(data,"json"):data=data.json()
-                Clock.schedule_once(lambda _dt:self._saved_navigation_settings(data))
-            except Exception as exc:
-                Clock.schedule_once(lambda _dt,msg=str(exc):setattr(self.status_label,"text","Speichern fehlgeschlagen: "+msg))
-        threading.Thread(target=worker,daemon=True).start()
-
-    def _saved_navigation_settings(self,data):
-        self.apply_navigation_settings(data)
-        self.status_label.text="GPS-/IMU-Einstellungen in tractor.db gespeichert"
-        self.load_navigation_settings()
+        """Kompatibilitaet: Navigationseinstellungen verwaltet der SensorScreen."""
+        pass
 
     def set_display_brightness(self,value):
         try:
