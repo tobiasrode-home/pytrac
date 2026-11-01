@@ -35,16 +35,16 @@ class SteeringIndicator(Widget):
         margin = dp(14)
         usable = max(1., w - 2 * margin)
         with self.canvas:
-            Color(*((.12, .15, .15, 1) if self.dark_mode else (0, 0, 0, 1)))
+            Color(*((.12, .15, .15, 1) if self.dark_mode else (1, 1, 1, 1)))
             RoundedRectangle(pos=(x, y + dp(6)), size=(w, h - dp(12)), radius=[dp(9)])
             Color(*((.35, .38, .38, 1) if self.dark_mode else (.72, .75, .78, 1)))
             Rectangle(pos=(x + margin, cy - dp(1)), size=(usable, dp(2)))
-            Color(*((.9, .9, .9, 1) if self.dark_mode else (1, 1, 1, 1)))
+            Color(*((.9, .9, .9, 1) if self.dark_mode else (0, 0, 0, 1)))
             Rectangle(pos=(x + w/2 - dp(1), y + dp(8)), size=(dp(2), h - dp(16)))
             if self.correction is not None:
                 amount = max(-1., min(1., float(self.correction)))
                 width = abs(amount) * usable / 2
-                Color((.2, .85, .35, 1) if abs(amount) < .08 else (.98, .68, .16, 1))
+                Color(((.2, .85, .35, 1) if abs(amount) < .08 else (.98, .68, .16, 1)) if self.dark_mode else (0, 0, 0, 1))
                 Rectangle(pos=(x + w/2 + min(0., amount * usable / 2), cy - dp(7)),
                           size=(max(dp(2), width), dp(14)))
 
