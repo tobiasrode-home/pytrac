@@ -283,10 +283,42 @@ class Precision2D(Widget):
                         y0 + pad + dp(63) + dp(8))
             # HUD-Elemente unabhängig von gültigen GPS-Daten
             pad=dp(12)
+            # Sollgeschwindigkeit stammt aus dem geladenen Arbeitsauftrag (km/h).
+            # Ohne Sollwert bleibt die bisherige Darstellung erhalten.
+            import math
+            target_speed = None
+            try:
+                raw_target = self.navigator.planning.get('speed') if self.navigator else None
+                if raw_target is not None:
+                    parsed = float(raw_target)
+                    if math.isfinite(parsed) and parsed > 0:
+                        target_speed = parsed
+            except (ValueError, TypeError, AttributeError):
+                pass
+            actual_speed = None
+            try:
+                raw_actual = state.get('speed_mps')
+                if raw_actual is not None:
+                    parsed = float(raw_actual) * 3.6
+                    if math.isfinite(parsed):
+                        actual_speed = max(0.0, parsed)
+            except (ValueError, TypeError, AttributeError):
+                pass
+            speed_fill = None
+            if target_speed is not None and actual_speed is not None:
+                difference = abs(actual_speed - target_speed)
+                if difference > 2.0:
+                    speed_fill = (.75, .15, .13, 1)
+                elif difference > 1.0:
+                    speed_fill = (.78, .57, .08, 1)
             self._panel(x0+pad,y0+pad,dp(148),dp(63))
-            try:speed=f'{float(state.get("speed_mps") or 0)*3.6:.1f}'
-            except (ValueError,TypeError):speed='–'
-            self._text(speed+' km/h',x0+pad+dp(74),y0+pad+dp(36),18)
+            if speed_fill is not None:
+                Color(*speed_fill)
+                RoundedRectangle(pos=(x0+pad,y0+pad),size=(dp(148),dp(63)),radius=[dp(12)])
+            speed = f'{actual_speed:.1f}' if actual_speed is not None else '–'
+            if target_speed is not None:
+                speed += f'/{target_speed:.1f}'
+            self._text(speed+' km/h',x0+pad+dp(74),y0+pad+dp(36),15 if target_speed is not None else 18)
             self._text('GESCHWINDIGKEIT',x0+pad+dp(74),y0+pad+dp(14),9,(.49,.70,.71,1) if self.dark_mode else (.24,.29,.34,1),False)
             self._panel(x0+w-dp(160),y0+pad,dp(148),dp(63))
             self._text(f'{self.zoom_m:.0f} m',x0+w-dp(86),y0+pad+dp(36),18)

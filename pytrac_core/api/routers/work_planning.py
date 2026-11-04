@@ -60,6 +60,7 @@ class ManualPlanningCreate(BaseModel):
     implement_id: int = Field(gt=0)
     field_id: int = Field(gt=0)
     tracks: list[list[list[float]]] = Field(min_length=1,max_length=500)
+    speed: float | None = Field(default=None,gt=0,allow_inf_nan=False)
 
 @router.post('/manual',status_code=201)
 def create_manual_planning(data: ManualPlanningCreate, db: Session=Depends(get_db)):
@@ -71,7 +72,7 @@ def create_manual_planning(data: ManualPlanningCreate, db: Session=Depends(get_d
     tractor,implement,field=run(lambda:svc._data(data.tractor_id,data.implement_id,data.field_id))
     validate_manual_tracks(data.tracks,field)
     row=WorkPlanning(name=data.name,tractor_id=data.tractor_id,implement_id=data.implement_id,
-       field_id=data.field_id,speed=None,turn_type='u_turn',headland_mode='headlands_only',
+       field_id=data.field_id,speed=data.speed,turn_type='u_turn',headland_mode='headlands_only',
        bed_working=False,guidance_mode='straight',reference_edge_count=1,
        alignment_boundary_id='edge-0',start_boundary_a_id='edge-0',start_boundary_b_id='edge-1',
        headland_working_widths=1,headland_start_passes=None,headland_end_passes=None,
@@ -99,6 +100,21 @@ def validate_manual_tracks(tracks,field):
         line=transform(forward,LineString(track))
         if line.length<1 or not boundary.buffer(.05).covers(line):
             raise HTTPException(422,'Die Spurmitte muss mindestens 1 m lang sein und innerhalb des Feldes liegen.')
+
+class PlanningSpeedPayload(BaseModel):
+    speed: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+@router.patch('/{planning_id}/speed', response_model=WorkPlanningRead)
+def update_planning_speed(planning_id: int, data: PlanningSpeedPayload, db: Session=Depends(get_db)):
+    """Sollgeschwindigkeit in km/h aktualisieren oder durch null zurücksetzen."""
+    from pytrac_core.persistence.models.work_planning import WorkPlanning
+    row = db.get(WorkPlanning, planning_id)
+    if row is None:
+        raise HTTPException(404, 'Arbeitsplanung nicht gefunden.')
+    row.speed = data.speed
+    db.commit()
+    return service(db).get(planning_id)
+
 
 class ManualTracksPayload(BaseModel):
     tracks: list[list[list[float]]] = Field(max_length=500)
