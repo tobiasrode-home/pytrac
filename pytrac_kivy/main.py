@@ -56,7 +56,8 @@ class PytracKivyApp(App):
             api_client=self.api_client,on_back=self.show_settings,
             on_navigation_settings=self.dashboard.set_navigation_settings,
             on_work_mode=self.dashboard.set_work_mode,
-            on_theme_changed=self.set_dark_mode)
+            on_theme_changed=self.set_dark_mode,
+            on_gps_simulation=self.control_gps_simulation)
         self._add_screen('device_settings',self.device_settings_screen)
         self.master_data_screen=MasterDataScreen(api_url=settings.kivy_api_base_url,
             selection=self.selection,api_client=self.api_client,on_back=self.show_settings,
@@ -69,6 +70,13 @@ class PytracKivyApp(App):
         apply_theme(self.screen_manager, self._dark_mode)
         Clock.schedule_once(lambda _dt:self._load_theme(),0)
         return self.screen_manager
+    def control_gps_simulation(self, action, *params):
+        if action == 'stop':
+            self.dashboard.stop_gps_simulation()
+            return
+        self.dashboard.start_gps_simulation(*params)
+        self.screen_manager.current = 'dashboard'
+
     def _load_theme(self):
         def worker():
             dark = True  # Safe fallback if backend is unreachable.

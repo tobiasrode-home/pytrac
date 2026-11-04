@@ -5,6 +5,7 @@ Vorgewende bleibt beim Fahrer. GPS muss gültig sein.
 """
 import threading
 import math
+import time
 from pathlib import Path
 from pytrac_kivy.ui.stop_distance import stop_distance_text, signed_distance_to_stop
 from kivy.clock import Clock
@@ -62,6 +63,8 @@ class WorkDashboard(BoxLayout):
         self.navigator=None
         self._marker=None
         self._latest_state=None
+        self._gps_simulation=None
+        self._gps_simulation_event=None
         self.imu_roll_offset_deg=0.0
         self.imu_heading_offset_deg=0.0
         self.abstract_map=True
@@ -629,8 +632,62 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
             self.message_label.text='Automatik: Aufzeichnung beendet – Gerät manuell ausheben'
             self.next_track()
 
+    def start_gps_simulation(self, distance_m, speed_kmh, heading_deg):
+        """Temporary frontend-only GPS override; never writes progress to backend."""
+        if self._gps_simulation is not None:
+            self.stop_gps_simulation()
+        source = self._latest_state or {}
+        lat, lon = source.get('latitude'), source.get('longitude')
+        try:
+            lat, lon = float(lat), float(lon)
+            if not all(math.isfinite(x) for x in (lat, lon)) or abs(lat) > 90 or abs(lon) > 180:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise ValueError('Keine gültige GPS-Startposition verfügbar.')
+        distance_m, speed_kmh, heading_deg = float(distance_m), float(speed_kmh), float(heading_deg)
+        if not (1 <= distance_m <= 100 and .2 <= speed_kmh <= 20 and 0 <= heading_deg < 360):
+            raise ValueError('Ungültige Simulationsparameter.')
+        self._gps_simulation = dict(lat=lat, lon=lon, distance=distance_m,
+                                    speed=speed_kmh / 3.6, heading=heading_deg,
+                                    start=time.monotonic(), base=dict(source))
+        self._last_record_signature = None
+        self._gps_simulation_event = Clock.schedule_interval(self._gps_simulation_tick, .1)
+        self._gps_simulation_tick(0)
+
+    def _gps_simulation_tick(self, _dt):
+        sim = self._gps_simulation
+        if sim is None:
+            return False
+        travelled = min(sim['distance'], max(0., time.monotonic()-sim['start']) * sim['speed'])
+        angle = math.radians(sim['heading'])
+        north = travelled * math.cos(angle)
+        east = travelled * math.sin(angle)
+        latitude = sim['lat'] + math.degrees(north / 6371000.)
+        cos_lat = math.cos(math.radians(sim['lat']))
+        longitude = sim['lon'] + math.degrees(east / (6371000. * max(abs(cos_lat), .000001)))
+        data = dict(sim['base'])
+        data.update(latitude=latitude, longitude=longitude, gps_valid=True, available=True,
+                    imu_valid=True, heading_deg=(sim['heading'] - self.imu_heading_offset_deg) % 360,
+                    pitch_deg=0., roll_deg=0., speed_mps=sim['speed'],
+                    timestamp=f'simulation-{travelled:.3f}')
+        self._show_state(data)
+        self.message_label.text = f'GPS-SIMULATION · {travelled:.1f}/{sim["distance"]:.1f} m · keine Speicherung'
+        if travelled >= sim['distance']:
+            self.stop_gps_simulation()
+            return False
+        return True
+
+    def stop_gps_simulation(self):
+        self._gps_simulation = None
+        event = self._gps_simulation_event
+        self._gps_simulation_event = None
+        if event is not None:
+            event.cancel()
+        self._last_record_signature = None
+        self.refresh()
+
     def refresh(self):
-        if self.busy:return
+        if self._gps_simulation is not None or self.busy:return
         self.busy=True
         def worker():
             try:
@@ -653,6 +710,8 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         self.imu_roll_offset_deg=float(data.get("imu_roll_offset_deg",0.))
 
     def _show_state(self,data):
+        if self._gps_simulation is not None and not str(data.get("timestamp", "")).startswith("simulation-"):
+            return
         # Rohdaten bleiben unverändert im Backend. Anzeige und Navigation
         # erhalten eine Kopie mit korrigierter IMU-Ausrichtung und optional
         # gefilterten Koordinaten.
@@ -701,7 +760,7 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
             heading=data.get('heading_deg')
             if heading is not None and data.get('imu_valid'):
                 self._marker.set_heading(heading)
-        if valid and self.recording and self.navigator and self.navigator.state.active:
+        if valid and self._gps_simulation is None and self.recording and self.navigator and self.navigator.state.active:
             try:
                 # Sensor-Zeitstempel verhindert wiederholtes Speichern desselben Fixes.
                 signature=(data.get('timestamp'),float(data.get('latitude',lat)),
@@ -749,7 +808,8 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                 self.offset_label.text=(f'Spurabweichung: {abs(signed):.2f} m '
                                         + ('links' if signed>0 else 'rechts' if signed<0 else 'mittig'))
                 self.remaining_label.text=f"Bis Spurende: {fix['remaining_m']:.1f} m"
-                self._automatic_event(fix, data)
+                if self._gps_simulation is None:
+                    self._automatic_event(fix, data)
                 action=fix['event_action']
                 if action:
                     self.action_label.text=(('Absenken' if action=='lower' else 'Ausheben')
