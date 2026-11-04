@@ -65,6 +65,8 @@ class WorkDashboard(BoxLayout):
         self._latest_state=None
         self._gps_simulation=None
         self._gps_simulation_event=None
+        self._simulation_progress=[]
+        self._simulation_last_position=None
         self.imu_roll_offset_deg=0.0
         self.imu_heading_offset_deg=0.0
         self.abstract_map=True
@@ -228,7 +230,7 @@ class WorkDashboard(BoxLayout):
 
     def _draw_progress(self):
         width=(self.selection.get('implement') or {}).get('working_width_m',0)
-        self.precision_view.set_progress(self.progress_points, width)
+        self.precision_view.set_progress(self.progress_points + self._simulation_progress, width)
         if self.field_overlay:
             self.field_overlay.set_data(field=self.selection.get('field'),track_points=self.progress_points,
                                         working_width_m=(self.selection.get('implement') or {}).get('working_width_m',0))
@@ -650,6 +652,9 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
         self._gps_simulation = dict(lat=lat, lon=lon, distance=distance_m,
                                     speed=speed_kmh / 3.6, heading=heading_deg,
                                     start=time.monotonic(), base=dict(source))
+        self._simulation_progress=[]
+        self._simulation_last_position=None
+        self._draw_progress()
         self._last_record_signature = None
         self._gps_simulation_event = Clock.schedule_interval(self._gps_simulation_tick, .1)
         self._gps_simulation_tick(0)
@@ -671,14 +676,55 @@ Anhalten, Gerät manuell bedienen und bestätigen.',
                     pitch_deg=0., roll_deg=0., speed_mps=sim['speed'],
                     timestamp=f'simulation-{travelled:.3f}')
         self._show_state(data)
+        self._record_simulated_progress(data)
         self.message_label.text = f'GPS-SIMULATION · {travelled:.1f}/{sim["distance"]:.1f} m · keine Speicherung'
         if travelled >= sim['distance']:
             self.stop_gps_simulation()
             return False
         return True
 
+    def _record_simulated_progress(self, data):
+        """Render temporary simulated coverage without any backend writes."""
+        if self._gps_simulation is None or not self.recording or not self.navigator or not self.navigator.state.active:
+            self._simulation_last_position = None
+            return
+        try:
+            tractor = self.selection.get('tractor') or {}
+            implement = self.selection.get('implement') or {}
+            lat, lon = implement_progress_position(
+                float(data['latitude']), float(data['longitude']),
+                float(data['heading_deg']), float(tractor['length_m']),
+                float(implement['length_m']),
+                implement.get('mount_type', 'rear'),
+                implement.get('work_offset_m') or 0.)
+            if not all(math.isfinite(v) for v in (lat, lon)):
+                return
+        except (KeyError, ValueError, TypeError, OverflowError):
+            return
+        # Do not turn a stationary IMU rotation into new coverage.
+        current = (lat, lon)
+        if self._simulation_last_position is not None:
+            old = self._simulation_last_position
+            north = (lat - old[0]) * 111132.92
+            east = (lon - old[1]) * 111319.49 * math.cos(math.radians(lat))
+            if math.hypot(north, east) < 0.03:
+                return
+        from datetime import datetime, timezone
+        self._simulation_progress.append({
+            'latitude': lat, 'longitude': lon,
+            'phase': self.navigator.state.phase,
+            'track_id': str(self.navigator.track['id']),
+            'recorded_at': datetime.now(timezone.utc).isoformat(),
+            'fix_key': f'simulation-{len(self._simulation_progress)}',
+        })
+        self._simulation_last_position = current
+        self._draw_progress()
+
     def stop_gps_simulation(self):
         self._gps_simulation = None
+        self._simulation_progress=[]
+        self._simulation_last_position=None
+        self._draw_progress()
         event = self._gps_simulation_event
         self._gps_simulation_event = None
         if event is not None:
