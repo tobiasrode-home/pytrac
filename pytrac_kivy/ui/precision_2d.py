@@ -285,7 +285,6 @@ class Precision2D(Widget):
             pad=dp(12)
             # Sollgeschwindigkeit stammt aus dem geladenen Arbeitsauftrag (km/h).
             # Ohne Sollwert bleibt die bisherige Darstellung erhalten.
-            import math
             target_speed = None
             try:
                 raw_target = self.navigator.planning.get('speed') if self.navigator else None
