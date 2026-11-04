@@ -18,14 +18,13 @@ log=logging.getLogger(__name__)
 
 class DeviceSettingsScreen(BoxLayout):
     def __init__(self,api_client,on_back=None,on_navigation_settings=None,
-                 on_work_mode=None,on_theme_changed=None,on_gps_simulation=None,**kwargs):
+                 on_work_mode=None,on_theme_changed=None,**kwargs):
         super().__init__(orientation='vertical',padding=dp(12),spacing=dp(9),**kwargs)
         self.api_client=api_client
         self.on_back=on_back
         self.on_navigation_settings=on_navigation_settings
         self.on_work_mode=on_work_mode
         self.on_theme_changed=on_theme_changed
-        self.on_gps_simulation=on_gps_simulation
         self._request_id=0
         self._saving=False
         self._loaded=False
@@ -81,8 +80,6 @@ class DeviceSettingsScreen(BoxLayout):
         switch_holder.add_widget(self.dark_mode_switch)
         switch_holder.add_widget(Label())
         theme_row.add_widget(switch_holder)
-        simulation_row=self._setting_row(content,'GPS-Simulation')
-        simulation_row.add_widget(self._button('Fahrt simulieren …',lambda *_:self._open_simulation_popup()))
         self.save_button=self._button('Einstellungen speichern',lambda *_:self.save(),height=dp(58))
         self.add_widget(self.save_button)
         self.status=Label(text='',size_hint_y=None,height=dp(35))
@@ -110,43 +107,6 @@ class DeviceSettingsScreen(BoxLayout):
         for index,title in enumerate(('Manuell','Halbautomatisch','Automatisch')):
             button=self._button(title,lambda _btn,v=index:(self._set_mode(v),popup.dismiss()),height=60)
             panel.add_widget(button)
-        popup.open()
-
-    def _open_simulation_popup(self):
-        panel=BoxLayout(orientation='vertical',padding=dp(14),spacing=dp(10))
-        popup=Popup(title='GPS-Fahrtsimulation · TEST',content=panel,
-                    size_hint=(.82,None),height=dp(390),auto_dismiss=True)
-        inputs=[]
-        for caption,default in (('Strecke (m)','10'),('Geschwindigkeit (km/h)','3'),('Fahrtrichtung (°; 0 = Nord)','0')):
-            row=BoxLayout(size_hint_y=None,height=dp(53),spacing=dp(8))
-            row.add_widget(Label(text=caption,size_hint_x=.65))
-            field=TextInput(text=default,multiline=False,size_hint_x=.35,font_size='19sp')
-            bind_fullscreen_keyboard(field,caption)
-            row.add_widget(field)
-            panel.add_widget(row)
-            inputs.append(field)
-        message=Label(text='Nur Anzeige und Navigation. Keine Speicherung von Arbeitsflächen.',
-                      font_size='14sp')
-        panel.add_widget(message)
-        buttons=BoxLayout(size_hint_y=None,height=dp(58),spacing=dp(8))
-        def start(*_):
-            try:
-                values=[float(field.text.strip().replace(',','.')) for field in inputs]
-                if self.on_gps_simulation is None:
-                    raise ValueError('Simulation nicht verfügbar.')
-                self.on_gps_simulation('start',*values)
-            except (ValueError,TypeError) as exc:
-                message.text=str(exc)
-                return
-            popup.dismiss()
-        def stop(*_):
-            if self.on_gps_simulation:
-                self.on_gps_simulation('stop')
-            popup.dismiss()
-        buttons.add_widget(self._button('Starten',start))
-        buttons.add_widget(self._button('Stoppen',stop))
-        buttons.add_widget(self._button('Abbrechen',lambda *_:popup.dismiss()))
-        panel.add_widget(buttons)
         popup.open()
 
     @staticmethod
